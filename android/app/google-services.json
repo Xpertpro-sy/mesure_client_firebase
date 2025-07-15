@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1019506411549",
+    "project_id": "fir-mesure",
+    "storage_bucket": "fir-mesure.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1019506411549:android:05f3deb67aa8481eacdef4",
+        "android_client_info": {
+          "package_name": "com.mesure.client_mesure_firebase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIKCHKiQQbdrsvA3NFbLISuzzs0LOJgdY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
