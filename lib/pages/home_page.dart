@@ -82,8 +82,11 @@ class _MyHomePageState extends State<MyHomePage> {
 
       if (newStatus != _isOnline) {
         setState(() => _isOnline = newStatus);
-        if (newStatus && _isHiveInitialized) { // Vérifiez ici
-          _syncPendingMeasurements();
+        if (newStatus) {
+          // Délai pour s'assurer que la connexion est stable
+          Future.delayed(const Duration(seconds: 3), () {
+            _syncPendingMeasurements();
+          });
         }
       }
     });
@@ -93,20 +96,41 @@ class _MyHomePageState extends State<MyHomePage> {
     if (!_isHiveInitialized) return;
 
     try {
-      // Utilisez les clés Hive au lieu des valeurs
-      for (var key in _pendingBox.keys) {
+      // Créez une copie de la liste avant traitement
+      final pendingKeys = _pendingBox.keys.toList();
+
+      for (final key in pendingKeys) {
         final measurement = _pendingBox.get(key);
         if (measurement != null) {
-          await _firestore.collection('measurements').add({
-            ...measurement.toFirestore(),
-            'status': 'synced',
-            'syncedAt': FieldValue.serverTimestamp(),
-          });
-          await _pendingBox.delete(key); // Supprimez par clé Hive
+          // Ajoutez un marqueur pour éviter les doublons
+          if (measurement.status != 'syncing') {
+            // Marquez la mesure comme en cours de synchronisation
+            final updatedMeasurement = measurement.copyWith(status: 'syncing');
+            await _pendingBox.put(key, updatedMeasurement);
+
+            // Envoyez à Firestore
+            final docRef = await _firestore.collection('measurements').add({
+              ...updatedMeasurement.toFirestore(),
+              'status': 'synced',
+              'syncedAt': FieldValue.serverTimestamp(),
+            });
+
+            // Supprimez de Hive après succès
+            await _pendingBox.delete(key);
+          }
         }
       }
     } catch (e) {
       print("Erreur de synchronisation: $e");
+
+      // En cas d'erreur, remettre le statut à 'pending'
+      final pendingKeys = _pendingBox.keys.toList();
+      for (final key in pendingKeys) {
+        final measurement = _pendingBox.get(key);
+        if (measurement?.status == 'syncing') {
+          await _pendingBox.put(key, measurement!.copyWith(status: 'pending'));
+        }
+      }
     }
   }
 
@@ -178,11 +202,14 @@ class _MyHomePageState extends State<MyHomePage> {
       } else {
         // Stocker localement
         await _pendingBox.add(newMeasurement);
+        // FORCER LE REBUILD DE L'INTERFACE
+        setState(() {});
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mesures enregistrées avec succès!')),
       );
+
       if (mounted) Navigator.pop(context);
       _resetForm();
     } catch (e) {

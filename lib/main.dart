@@ -16,17 +16,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  await Hive.initFlutter();
-
-  // Enregistrez l'adaptateur manuel
-  Hive.registerAdapter(MeasurementAdapter());
-
-  await Hive.openBox<Measurement>('pending_measurements');
-
+  // Configuration du cache Firestore
+  await FirebaseFirestore.instance.clearPersistence();
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
+
+  await Hive.initFlutter();
+  Hive.registerAdapter(MeasurementAdapter());
+  await Hive.openBox<Measurement>('pending_measurements');
 
   runApp(const MyApp());
 }

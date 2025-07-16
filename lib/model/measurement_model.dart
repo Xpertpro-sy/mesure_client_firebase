@@ -116,6 +116,8 @@ class Measurement {
     double? price,
     double? advance,
     String? userId,
+    String? status,
+    DateTime? syncedAt,
   }) {
     return Measurement(
       id: id ?? this.id,
@@ -128,6 +130,8 @@ class Measurement {
       price: price ?? this.price,
       advance: advance ?? this.advance,
       userId: userId ?? this.userId,
+      status: status ?? this.status,
+      syncedAt: syncedAt ?? this.syncedAt,
     );
   }
 }
