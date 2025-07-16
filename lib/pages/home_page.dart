@@ -36,7 +36,8 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isOnline = true;
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   final _syncController = StreamController<void>();
-  final _pendingBox = Hive.box<Measurement>('pending_measurements');
+  late Box<Measurement> _pendingBox;
+  bool _isHiveInitialized = false;
 
   @override
   void initState() {
@@ -45,13 +46,24 @@ class _MyHomePageState extends State<MyHomePage> {
     _searchController.addListener(() {
       _searchNotifier.value = _searchController.text;
     });
-    _initConnectivity();
-    _setupOfflineListener();
-    _initHive();
+
+    // Initialisez Hive avant tout
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _initHive();
+      _initConnectivity();
+      _setupOfflineListener();
+    });
   }
 
+  // Puis dans _ini tHive :
   Future<void> _initHive() async {
-    await Hive.openBox<Measurement>('pending_measurements');
+    try {
+      _pendingBox = await Hive.openBox<Measurement>('pending_measurements');
+      setState(() => _isHiveInitialized = true);
+    } catch (e) {
+      print("Erreur d'initialisation Hive: $e");
+      // Gérer l'erreur ou réessayer
+    }
   }
 
   Future<void> _initConnectivity() async {
@@ -64,19 +76,21 @@ class _MyHomePageState extends State<MyHomePage> {
   void _setupOfflineListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
-        .listen((List<ConnectivityResult> results) { // Modifié
-      final newStatus = results.isNotEmpty && results.any(
-              (result) => result != ConnectivityResult.none
-      );
+        .listen((List<ConnectivityResult> results) {
+      final newStatus = results.isNotEmpty &&
+          results.any((result) => result != ConnectivityResult.none);
 
       if (newStatus != _isOnline) {
         setState(() => _isOnline = newStatus);
-        if (newStatus) _syncPendingMeasurements();
+        if (newStatus && _isHiveInitialized) { // Vérifiez ici
+          _syncPendingMeasurements();
+        }
       }
     });
   }
 
   Future<void> _syncPendingMeasurements() async {
+    if (!_isHiveInitialized) return;
     final pendingMeasurements = _pendingBox.values.toList();
 
     for (final measurement in pendingMeasurements) {
@@ -159,11 +173,8 @@ class _MyHomePageState extends State<MyHomePage> {
       if (_isOnline) {
         await _firestore.collection('measurements').add(newMeasurement.toFirestore());
       } else {
-        // Stocker localement
         await _pendingBox.add(newMeasurement);
       }
-
-      await _firestore.collection('measurements').add(newMeasurement.toFirestore());
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mesures enregistrées avec succès!')),
@@ -1138,24 +1149,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
 
-            if (!_isOnline)
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: Colors.amber[100],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.wifi_off, color: Colors.amber[800]),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Mode hors ligne - Les données seront synchronisées',
-                      style: TextStyle(color: Colors.amber[800]),
-                    ),
-                  ],
-                ),
-              ),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -1361,7 +1355,27 @@ class _MyHomePageState extends State<MyHomePage> {
                   },
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
+
+              if (!_isOnline)
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.amber[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.wifi_off, color: Colors.amber[800]),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Mode hors ligne - Les données seront \nsynchronisées une fois que vous \nêtre connecter',
+                        style: TextStyle(color: Colors.amber[800]),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 10),
               Expanded(
                 child: StreamBuilder<List<Measurement>>(
                   stream: _getMeasurementsStream(),
