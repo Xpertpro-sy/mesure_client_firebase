@@ -11,6 +11,8 @@ class Measurement {
   final double? price;
   final double? advance;
   final String userId;
+  final String status; // 'synced' ou 'pending'
+  final DateTime? syncedAt;
 
   Measurement({
     this.id,
@@ -23,6 +25,8 @@ class Measurement {
     this.price = 0.0,
     this.advance = 0.0,
     required this.userId,
+    this.status = 'synced',
+    this.syncedAt,
   });
 
   /// Convertit un document Firestore en objet Measurement
@@ -49,6 +53,10 @@ class Measurement {
       price: parseDouble(data['price']),
       advance: parseDouble(data['advance']),
       userId: data['userId'] as String? ?? "",
+      status: data['status'] as String? ?? 'synced',
+      syncedAt: data['syncedAt'] != null
+          ? (data['syncedAt'] as Timestamp).toDate()
+          : null,
     );
   }
 
@@ -64,6 +72,8 @@ class Measurement {
       'price': price,
       'advance': advance,
       'userId': userId,
+      'status': status,
+      'syncedAt': syncedAt != null ? Timestamp.fromDate(syncedAt!) : null,
     };
   }
 

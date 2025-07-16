@@ -1,6 +1,10 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -29,6 +33,11 @@ class _MyHomePageState extends State<MyHomePage> {
   double? _prix;
   double? _avance;
 
+  bool _isOnline = true;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
+  final _syncController = StreamController<void>();
+  final _pendingBox = Hive.box<Measurement>('pending_measurements');
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +45,52 @@ class _MyHomePageState extends State<MyHomePage> {
     _searchController.addListener(() {
       _searchNotifier.value = _searchController.text;
     });
+    _initConnectivity();
+    _setupOfflineListener();
+    _initHive();
+  }
+
+  Future<void> _initHive() async {
+    await Hive.openBox<Measurement>('pending_measurements');
+  }
+
+  Future<void> _initConnectivity() async {
+    final results = await Connectivity().checkConnectivity(); // Modifié
+    setState(() => _isOnline = results.any(
+            (result) => result != ConnectivityResult.none
+    ));
+  }
+
+  void _setupOfflineListener() {
+    _connectivitySubscription = Connectivity()
+        .onConnectivityChanged
+        .listen((List<ConnectivityResult> results) { // Modifié
+      final newStatus = results.isNotEmpty && results.any(
+              (result) => result != ConnectivityResult.none
+      );
+
+      if (newStatus != _isOnline) {
+        setState(() => _isOnline = newStatus);
+        if (newStatus) _syncPendingMeasurements();
+      }
+    });
+  }
+
+  Future<void> _syncPendingMeasurements() async {
+    final pendingMeasurements = _pendingBox.values.toList();
+
+    for (final measurement in pendingMeasurements) {
+      try {
+        await _firestore.collection('measurements').add({
+          ...measurement.toFirestore(),
+          'status': 'synced',
+          'syncedAt': FieldValue.serverTimestamp(),
+        });
+        await _pendingBox.delete(measurement.id);
+      } catch (e) {
+        print("Erreur de synchronisation: $e");
+      }
+    }
   }
 
   void _resetForm() {
@@ -61,6 +116,8 @@ class _MyHomePageState extends State<MyHomePage> {
     for (var input in _currentMeasureInputs) {
       input.controller.dispose();
     }
+    _syncController.close();
+    _connectivitySubscription.cancel();
     super.dispose();
   }
 
@@ -95,7 +152,16 @@ class _MyHomePageState extends State<MyHomePage> {
         price: _prix,
         advance: _avance,
         userId: FirebaseAuth.instance.currentUser!.uid,
+        status: _isOnline ? 'synced' : 'pending',
+        syncedAt: _isOnline ? DateTime.now() : null,
       );
+
+      if (_isOnline) {
+        await _firestore.collection('measurements').add(newMeasurement.toFirestore());
+      } else {
+        // Stocker localement
+        await _pendingBox.add(newMeasurement);
+      }
 
       await _firestore.collection('measurements').add(newMeasurement.toFirestore());
 
@@ -1048,6 +1114,48 @@ class _MyHomePageState extends State<MyHomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (measurement.status == 'pending')
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber[100],
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.sync_disabled, size: 14, color: Colors.amber[800]),
+                    const SizedBox(width: 4),
+                    Text(
+                      'En attente de synchronisation',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.amber[800],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            if (!_isOnline)
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.amber[100],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.wifi_off, color: Colors.amber[800]),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Mode hors ligne - Les données seront synchronisées',
+                      style: TextStyle(color: Colors.amber[800]),
+                    ),
+                  ],
+                ),
+              ),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
