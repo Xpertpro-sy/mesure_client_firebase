@@ -5,10 +5,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
+import 'package:hive_flutter/adapters.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../model/measurement_model.dart';
+
+import 'package:rxdart/rxdart.dart';
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
@@ -41,8 +44,14 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void initState() {
-    super.initState();
     _resetForm();
+
+    // Initialiser Hive immédiatement
+    _initHive().then((_) {
+      _initConnectivity();
+      _setupOfflineListener();
+    });
+
     _searchController.addListener(() {
       _searchNotifier.value = _searchController.text;
     });
@@ -55,81 +64,55 @@ class _MyHomePageState extends State<MyHomePage> {
     });
   }
 
-  // Puis dans _ini tHive :
+  // Simplifier _initHive
   Future<void> _initHive() async {
     try {
+      await Hive.initFlutter();
       _pendingBox = await Hive.openBox<Measurement>('pending_measurements');
       setState(() => _isHiveInitialized = true);
     } catch (e) {
       print("Erreur d'initialisation Hive: $e");
-      // Gérer l'erreur ou réessayer
+      // Fallback pour éviter le blocage
+      setState(() => _isHiveInitialized = true);
     }
   }
 
   Future<void> _initConnectivity() async {
-    final results = await Connectivity().checkConnectivity(); // Modifié
-    setState(() => _isOnline = results.any(
-            (result) => result != ConnectivityResult.none
-    ));
+    final connectivity = Connectivity();
+    final results = await connectivity.checkConnectivity();
+
+    setState(() {
+      _isOnline = results.any((result) => result != ConnectivityResult.none);
+    });
   }
 
   void _setupOfflineListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
-      final newStatus = results.isNotEmpty &&
-          results.any((result) => result != ConnectivityResult.none);
+      final newStatus = results.any((result) => result != ConnectivityResult.none);
 
       if (newStatus != _isOnline) {
         setState(() => _isOnline = newStatus);
-        if (newStatus) {
-          // Délai pour s'assurer que la connexion est stable
-          Future.delayed(const Duration(seconds: 3), () {
-            _syncPendingMeasurements();
-          });
-        }
+        if (newStatus) _syncPendingMeasurements();
       }
     });
   }
 
   Future<void> _syncPendingMeasurements() async {
-    if (!_isHiveInitialized) return;
+    if (!_isHiveInitialized || !_isOnline) return;
 
-    try {
-      // Créez une copie de la liste avant traitement
-      final pendingKeys = _pendingBox.keys.toList();
+    final pendingKeys = _pendingBox.keys.toList();
+    for (final key in pendingKeys) {
+      final measurement = _pendingBox.get(key);
+      if (measurement == null) continue;
 
-      for (final key in pendingKeys) {
-        final measurement = _pendingBox.get(key);
-        if (measurement != null) {
-          // Ajoutez un marqueur pour éviter les doublons
-          if (measurement.status != 'syncing') {
-            // Marquez la mesure comme en cours de synchronisation
-            final updatedMeasurement = measurement.copyWith(status: 'syncing');
-            await _pendingBox.put(key, updatedMeasurement);
-
-            // Envoyez à Firestore
-            final docRef = await _firestore.collection('measurements').add({
-              ...updatedMeasurement.toFirestore(),
-              'status': 'synced',
-              'syncedAt': FieldValue.serverTimestamp(),
-            });
-
-            // Supprimez de Hive après succès
-            await _pendingBox.delete(key);
-          }
-        }
-      }
-    } catch (e) {
-      print("Erreur de synchronisation: $e");
-
-      // En cas d'erreur, remettre le statut à 'pending'
-      final pendingKeys = _pendingBox.keys.toList();
-      for (final key in pendingKeys) {
-        final measurement = _pendingBox.get(key);
-        if (measurement?.status == 'syncing') {
-          await _pendingBox.put(key, measurement!.copyWith(status: 'pending'));
-        }
+      try {
+        // Solution simplifiée sans requête complexe
+        await _firestore.collection('measurements').add(measurement.toFirestore());
+        await _pendingBox.delete(key);
+      } catch (e) {
+        print("Erreur de synchronisation: $e");
       }
     }
   }
@@ -241,7 +224,13 @@ class _MyHomePageState extends State<MyHomePage> {
     });
 
     try {
-      await _firestore.collection('measurements').doc(id).delete();
+      if (id.startsWith('pending_')) {
+        final key = int.parse(id.split('_')[1]);
+        await _pendingBox.delete(key); // Suppression par clé Hive
+      } else {
+        // Supprimer de Firestore
+        await _firestore.collection('measurements').doc(id).delete();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mesure supprimée')),
       );
@@ -1092,52 +1081,42 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Stream<List<Measurement>> _getMeasurementsStream() {
     final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Stream.value([]);
 
-    if (user == null) {
-      return Stream.value([]);
-    }
+    final firestoreStream = _firestore
+        .collection('measurements')
+        .where('userId', isEqualTo: user.uid)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+        .map((doc) => Measurement.fromFirestore(doc, null))
+        .toList());
 
-    try {
-      return _firestore
-          .collection('measurements')
-          .where('userId', isEqualTo: user.uid)
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .handleError((error) {
-        // Gestion spécifique des erreurs d'index
-        if (error is FirebaseException &&
-            error.code == 'failed-precondition') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur: ${error.message}'),
-              action: SnackBarAction(
-                label: 'Créer index',
-                onPressed: () async {
-                  if (error.message != null &&
-                      error.message!.contains('https://')) {
-                    final url = error.message!.split(' ').last;
-                    if (await canLaunch(url)) {
-                      await launch(url);
-                    }
-                  }
-                },
-              ),
-            ),
-          );
-        }
-      })
-          .map((snapshot) => snapshot.docs
-          .map((doc) => Measurement.fromFirestore(doc, null))
-          .toList());
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de requête: $e')),
-      );
-      return Stream.value([]);
-    }
+    if (!_isHiveInitialized) return firestoreStream;
+
+    final hiveStream = Stream.value(_getPendingMeasurements());
+
+    return Rx.combineLatest2(
+      firestoreStream,
+      hiveStream,
+          (List<Measurement> firestore, List<Measurement> pending) {
+        final all = [...firestore, ...pending];
+        all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        return all;
+      },
+    );
+  }
+
+  List<Measurement> _getPendingMeasurements() {
+    if (!_isHiveInitialized) return [];
+
+    return _pendingBox.keys.map((key) {
+      final measurement = _pendingBox.get(key);
+      return measurement?.copyWith(id: 'pending_$key'); // Clé correcte
+    }).whereType<Measurement>().toList();
   }
 
   Widget _buildClientItem(Measurement measurement, int index) {
+    final isPending = measurement.id?.startsWith('pending_') ?? false;
     final dateFormat = DateFormat('dd/MM/yyyy');
     final formattedDate = dateFormat.format(measurement.createdAt);
     final measureKeys = measurement.measurements.keys.toList();
@@ -1151,190 +1130,207 @@ class _MyHomePageState extends State<MyHomePage> {
         border: Border.all(color: const Color(0xFFEAEAEA)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (measurement.status == 'pending')
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                margin: const EdgeInsets.only(bottom: 8),
-                decoration: BoxDecoration(
-                  color: Colors.amber[100],
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.sync_disabled, size: 14, color: Colors.amber[800]),
-                    const SizedBox(width: 4),
-                    Text(
-                      'En attente de synchronisation',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.amber[800],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Text(
-                      '#${index + 1}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[700],
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    _buildHighlightedText(
-                        measurement.clientName, _searchController.text),
-                  ],
-                ),
-                Text(
-                  formattedDate,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            if (measurement.measurements.isNotEmpty)
-              Table(
-                columnWidths: const {
-                  0: FlexColumnWidth(1.0),
-                  1: FlexColumnWidth(1.0),
-                  2: FlexColumnWidth(1.0),
-                  3: FlexColumnWidth(1.0),
-                  4: FlexColumnWidth(1.0),
-                  5: FlexColumnWidth(1.0),
-                  6: FlexColumnWidth(1.0),
-                },
-                children: [
-                  TableRow(
+                if (isPending)
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                    margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF9F9F9),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.amber[100],
+                      borderRadius: BorderRadius.circular(4),
                     ),
-                    children: measureKeys
-                        .take(maxDisplayed)
-                        .map((label) => Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10, horizontal: 4),
-                      child: Text(
-                        label,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF4A5568),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.sync_disabled, size: 14, color: Colors.amber[800]),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Synchronisation en attente',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.amber[800],
+                          ),
                         ),
+                      ],
+                    ),
+                  ),
+
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          '#${index + 1}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        _buildHighlightedText(
+                            measurement.clientName, _searchController.text),
+                      ],
+                    ),
+                    Text(
+                      formattedDate,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 12,
                       ),
-                    ))
-                        .toList(),
-                  ),
-                  TableRow(
-                    children: measureValues
-                        .take(maxDisplayed)
-                        .map((value) => Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 10, horizontal: 4),
-                      child: Text(
-                        value.toString(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Color(0xFF2D3748),
-                        ),
-                      ),
-                    ))
-                        .toList(),
-                  ),
-                ],
-              ),
-            if (hasExtraMeasures)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0x2463519E),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '+${measurement.measurements.length - maxDisplayed} mesures',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF63519F),
                     ),
-                  ),
+                  ],
                 ),
-              ),
-            // const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                GestureDetector(
-                  onTap: () => _showMontantBottomSheet(measurement),
-                  child: Text(
-                    measurement.price != null
-                        ? 'Montant: ${measurement.price} (Avance: ${measurement.advance ?? 0})'
-                        : 'Ajouter montant',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                if (_isDeleting && _deletingId == measurement.id)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  IconButton(
-                    icon: const Icon(Icons.delete_forever, size: 22),
-                    color: Colors.red[400],
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('Confirmer la suppression'),
-                          content: Text(
-                              'Voulez-vous vraiment supprimer "${measurement.clientName}" ?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('Annuler'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _deleteMeasurement(measurement.id!);
-                              },
-                              child: const Text('Supprimer',
-                                  style: TextStyle(color: Colors.red)),
-                            ),
-                          ],
-                        ),
-                      );
+                const SizedBox(height: 4),
+                if (measurement.measurements.isNotEmpty)
+                  Table(
+                    columnWidths: const {
+                      0: FlexColumnWidth(1.0),
+                      1: FlexColumnWidth(1.0),
+                      2: FlexColumnWidth(1.0),
+                      3: FlexColumnWidth(1.0),
+                      4: FlexColumnWidth(1.0),
+                      5: FlexColumnWidth(1.0),
+                      6: FlexColumnWidth(1.0),
                     },
+                    children: [
+                      TableRow(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9F9F9),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        children: measureKeys
+                            .take(maxDisplayed)
+                            .map((label) => Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 10, horizontal: 4),
+                          child: Text(
+                            label,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF4A5568),
+                            ),
+                          ),
+                        ))
+                            .toList(),
+                      ),
+                      TableRow(
+                        children: measureValues
+                            .take(maxDisplayed)
+                            .map((value) => Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 10, horizontal: 4),
+                          child: Text(
+                            value.toString(),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF2D3748),
+                            ),
+                          ),
+                        ))
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                if (hasExtraMeasures)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0x2463519E),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '+${measurement.measurements.length - maxDisplayed} mesures',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF63519F),
+                        ),
+                      ),
+                    ),
+                  ),
+                // const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _showMontantBottomSheet(measurement),
+                      child: Text(
+                        measurement.price != null
+                            ? 'Montant: ${measurement.price} (Avance: ${measurement.advance ?? 0})'
+                            : 'Ajouter montant',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (_isDeleting && _deletingId == measurement.id)
+                      const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      IconButton(
+                        icon: const Icon(Icons.delete_forever, size: 22),
+                        color: Colors.red[400],
+                        onPressed: () {
+                          showDialog(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Confirmer la suppression'),
+                              content: Text(
+                                  'Voulez-vous vraiment supprimer "${measurement.clientName}" ?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Annuler'),
+                                ),
+                                TextButton(
+                                  onPressed: () {
+                                    Navigator.pop(context);
+                                    _deleteMeasurement(measurement.id!);
+                                  },
+                                  child: const Text('Supprimer',
+                                      style: TextStyle(color: Colors.red)),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                  ],
+                ),
+
+                if (isPending)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.amber,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.warning, size: 16, color: Colors.white),
+                    ),
                   ),
               ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1408,7 +1404,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               const SizedBox(height: 10),
               Expanded(
-                child: StreamBuilder<List<Measurement>>(
+                child: !_isHiveInitialized
+                    ? const Center(child: CircularProgressIndicator())
+                    : StreamBuilder<List<Measurement>>(
                   stream: _getMeasurementsStream(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
