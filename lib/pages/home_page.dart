@@ -1,6 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../model/measurement_model.dart';
 
@@ -24,6 +26,8 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isLoading = false;
   bool _isDeleting = false;
   String? _deletingId;
+  double? _prix;
+  double? _avance;
 
   @override
   void initState() {
@@ -45,6 +49,8 @@ class _MyHomePageState extends State<MyHomePage> {
         controller: TextEditingController(text: '0'),
       ),
     ];
+    _prix = null;
+    _avance = null;
   }
 
   @override
@@ -86,6 +92,9 @@ class _MyHomePageState extends State<MyHomePage> {
         clientName: _nomCompletController.text.trim(),
         createdAt: DateTime.now(),
         measurements: mesures,
+        price: _prix,
+        advance: _avance,
+        userId: FirebaseAuth.instance.currentUser!.uid,
       );
 
       await _firestore.collection('measurements').add(newMeasurement.toFirestore());
@@ -101,6 +110,19 @@ class _MyHomePageState extends State<MyHomePage> {
       );
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateMontant(String id, double? prix, double? avance) async {
+    try {
+      await _firestore.collection('measurements').doc(id).update({
+        'price': prix,
+        'advance': avance,
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de mise à jour: $e')),
+      );
     }
   }
 
@@ -370,6 +392,19 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _showAddClientBottomSheet() {
+    final TextEditingController _prixController = TextEditingController(text: _prix?.toString() ?? '');
+    final TextEditingController _avanceController = TextEditingController(text: _avance?.toString() ?? '');
+    final TextEditingController _resteController = TextEditingController();
+
+    void _updateReste() {
+      final prix = double.tryParse(_prixController.text) ?? 0;
+      final avance = double.tryParse(_avanceController.text) ?? 0;
+      final reste = prix - avance;
+      _resteController.text = reste.toStringAsFixed(2);
+    }
+
+    _updateReste();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -397,7 +432,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             input.label,
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
-                              color: Colors.blue,
+                              color: Color(0xFF63519F),
                             ),
                           ),
                         ),
@@ -425,6 +460,15 @@ class _MyHomePageState extends State<MyHomePage> {
                           vertical: 8, horizontal: 12),
                       border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8)),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                            color: Color(0xFF63519F), width: 2),
+                      ),
                     ),
                   ),
                 ],
@@ -489,7 +533,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         mainAxisSpacing: 16,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        childAspectRatio: 0.9,
+                        childAspectRatio: 0.8,
                         children: _currentMeasureInputs
                             .map((input) => buildMeasureInput(input))
                             .toList(),
@@ -529,6 +573,128 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                       ),
                       const SizedBox(height: 24),
+                      const Text(
+                        'Montants',
+                        style: TextStyle(fontSize: 16, color: Colors.black),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5)),
+                        color: const Color(0x17000000),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Prix",
+                                style: TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w500),
+                              ),
+                              SizedBox(
+                                width: 100,
+                                child: TextField(
+                                  controller: _prixController,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF63519F),
+                                  ),
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.zero,
+                                    hintText: '0',
+                                  ),
+                                  onChanged: (_) {
+                                    setStateLocal(_updateReste);
+                                    _prix = double.tryParse(_prixController.text);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5)),
+                        color: const Color(0x17000000),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Avance",
+                                style: TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w500),
+                              ),
+                              SizedBox(
+                                width: 100,
+                                child: TextField(
+                                  controller: _avanceController,
+                                  keyboardType: TextInputType.number,
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF63519F),
+                                  ),
+                                  decoration: const InputDecoration(
+                                    border: InputBorder.none,
+                                    contentPadding: EdgeInsets.zero,
+                                    hintText: '0',
+                                  ),
+                                  onChanged: (_) {
+                                    setStateLocal(_updateReste);
+                                    _avance = double.tryParse(_avanceController.text);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Card(
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5)),
+                        color: const Color(0x17000000),
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(15),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                "Reste a payer",
+                                style: TextStyle(
+                                    fontSize: 16, fontWeight: FontWeight.w500),
+                              ),
+                              Text(
+                                _resteController.text,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: (double.tryParse(_resteController.text) ??
+                                      0) >
+                                      0
+                                      ? Colors.red
+                                      : Colors.green,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: _isLoading ? null : _createMeasurement,
                         style: ElevatedButton.styleFrom(
@@ -541,7 +707,8 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                         child: _isLoading
                             ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text('Enregistrer', style: TextStyle(fontSize: 16)),
+                            : const Text('Enregistrer',
+                            style: TextStyle(fontSize: 16)),
                       ),
                       const SizedBox(height: 20),
                     ],
@@ -555,36 +722,326 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  Stream<List<Measurement>> _getMeasurementsStream() {
-    return _firestore
-        .collection('measurements')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-        .map((doc) => Measurement.fromFirestore(doc, null))
-        .toList());
+  void _showMontantBottomSheet(Measurement measurement) {
+    final TextEditingController _prixController = TextEditingController(
+        text: measurement.price?.toString() ?? '');
+    final TextEditingController _avanceController = TextEditingController(
+        text: measurement.advance?.toString() ?? '');
+    final TextEditingController _resteController = TextEditingController();
+
+    void _updateReste() {
+      final prix = double.tryParse(_prixController.text) ?? 0;
+      final avance = double.tryParse(_avanceController.text) ?? 0;
+      final reste = prix - avance;
+      _resteController.text = reste.toStringAsFixed(2);
+    }
+
+    _updateReste();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 20,
+                right: 20,
+                top: 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Les montants',
+                        style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
+                    color: const Color(0x17000000),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(15),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Prix",
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
+                          ),
+                          SizedBox(
+                            width: 100,
+                            child: TextField(
+                              controller: _prixController,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF63519F),
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                hintText: '0',
+                              ),
+                              onChanged: (_) => setModalState(_updateReste),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
+                    color: const Color(0x17000000),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(15),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Avance",
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
+                          ),
+                          SizedBox(
+                            width: 100,
+                            child: TextField(
+                              controller: _avanceController,
+                              keyboardType: TextInputType.number,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF63519F),
+                              ),
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.zero,
+                                hintText: '0',
+                              ),
+                              onChanged: (_) => setModalState(_updateReste),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Card(
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(5)),
+                    color: const Color(0x17000000),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Padding(
+                      padding: const EdgeInsets.all(15),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            "Reste a payer",
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            _resteController.text,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: (double.tryParse(_resteController.text) ??
+                                  0) >
+                                  0
+                                  ? Colors.red
+                                  : Colors.green,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: () {
+                      final prix = double.tryParse(_prixController.text);
+                      final avance = double.tryParse(_avanceController.text);
+                      _updateMontant(measurement.id!, prix, avance);
+                      Navigator.pop(context);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF63519F),
+                      minimumSize: const Size(double.infinity, 50),
+                    ),
+                    child: const Text('Valider',
+                        style: TextStyle(color: Colors.white)),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
-  Widget _buildClientItem(Measurement measurement) {
+  String _normalize(String input) {
+    const diacritics =
+        'ÀÁÂÃÄÅàáâãäåÒÓÔÕÕÖØòóôõöøÈÉÊËèéêëðÇçÐÌÍÎÏìíîïÙÚÛÜùúûüÑñŠšŸÿýŽž';
+    const without =
+        'AAAAAAaaaaaaOOOOOOOooooooEEEEeeeeeCcDIIIIiiiiUUUUuuuuNnSsYyyZz';
+
+    return input.split('').map((char) {
+      final index = diacritics.indexOf(char);
+      return index != -1 ? without[index] : char;
+    }).join('');
+  }
+
+  RichText _buildHighlightedText(String text, String query) {
+    if (query.isEmpty) {
+      return RichText(
+        text: TextSpan(
+          text: text,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF2D3748),
+          ),
+        ),
+      );
+    }
+
+    final normalizedText = _normalize(text.toLowerCase());
+    final normalizedQuery = _normalize(query.toLowerCase());
+
+    List<TextSpan> spans = [];
+    int start = 0;
+
+    while (start < text.length) {
+      final matchIndex = normalizedText.indexOf(normalizedQuery, start);
+
+      if (matchIndex == -1) {
+        spans.add(TextSpan(
+          text: text.substring(start),
+          style: const TextStyle(color: Color(0xFF2D3748)),
+        ));
+        break;
+      }
+
+      if (matchIndex > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, matchIndex),
+          style: const TextStyle(color: Color(0xFF2D3748)),
+        ));
+      }
+
+      final matchEnd = matchIndex + query.length;
+      final matchedText = text.substring(
+          matchIndex, matchEnd < text.length ? matchEnd : text.length);
+
+      spans.add(TextSpan(
+        text: matchedText,
+        style: const TextStyle(
+          color: Color(0xFF63519F),
+          fontWeight: FontWeight.bold,
+        ),
+      ));
+
+      start = matchEnd;
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+        children: spans,
+      ),
+    );
+  }
+
+  Stream<List<Measurement>> _getMeasurementsStream() {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      return Stream.value([]);
+    }
+
+    try {
+      return _firestore
+          .collection('measurements')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .handleError((error) {
+        // Gestion spécifique des erreurs d'index
+        if (error is FirebaseException &&
+            error.code == 'failed-precondition') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur: ${error.message}'),
+              action: SnackBarAction(
+                label: 'Créer index',
+                onPressed: () async {
+                  if (error.message != null &&
+                      error.message!.contains('https://')) {
+                    final url = error.message!.split(' ').last;
+                    if (await canLaunch(url)) {
+                      await launch(url);
+                    }
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      })
+          .map((snapshot) => snapshot.docs
+          .map((doc) => Measurement.fromFirestore(doc, null))
+          .toList());
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de requête: $e')),
+      );
+      return Stream.value([]);
+    }
+  }
+
+  Widget _buildClientItem(Measurement measurement, int index) {
     final dateFormat = DateFormat('dd/MM/yyyy');
     final formattedDate = dateFormat.format(measurement.createdAt);
-
     final measureKeys = measurement.measurements.keys.toList();
     final measureValues = measurement.measurements.values.toList();
+    final maxDisplayed = 7;
+    final hasExtraMeasures = measurement.measurements.length > maxDisplayed;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 5,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: const Color(0xFFEAEAEA)),
+        borderRadius: BorderRadius.circular(8),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -594,33 +1051,31 @@ class _MyHomePageState extends State<MyHomePage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '#${measurement.id?.substring(0, 6) ?? 'N/A'}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey[700],
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      '#${index + 1}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    _buildHighlightedText(
+                        measurement.clientName, _searchController.text),
+                  ],
                 ),
                 Text(
                   formattedDate,
                   style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 12
+                    color: Colors.grey[600],
+                    fontSize: 12,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              measurement.clientName,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2D3748),
-              ),
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 4),
             if (measurement.measurements.isNotEmpty)
               Table(
                 columnWidths: const {
@@ -639,9 +1094,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     children: measureKeys
-                        .take(7)
+                        .take(maxDisplayed)
                         .map((label) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 4),
                       child: Text(
                         label,
                         textAlign: TextAlign.center,
@@ -655,9 +1111,10 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                   TableRow(
                     children: measureValues
-                        .take(7)
+                        .take(maxDisplayed)
                         .map((value) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 10, horizontal: 4),
                       child: Text(
                         value.toString(),
                         textAlign: TextAlign.center,
@@ -670,15 +1127,40 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                 ],
               ),
-            const SizedBox(height: 16),
+            if (hasExtraMeasures)
+              Align(
+                alignment: Alignment.centerRight,
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0x2463519E),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '+${measurement.measurements.length - maxDisplayed} mesures',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF63519F),
+                    ),
+                  ),
+                ),
+              ),
+            // const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
-                  'Montant: - • Avance: -',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                GestureDetector(
+                  onTap: () => _showMontantBottomSheet(measurement),
+                  child: Text(
+                    measurement.price != null
+                        ? 'Montant: ${measurement.price} (Avance: ${measurement.advance ?? 0})'
+                        : 'Ajouter montant',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
                 if (_isDeleting && _deletingId == measurement.id)
@@ -689,9 +1171,32 @@ class _MyHomePageState extends State<MyHomePage> {
                   )
                 else
                   IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 22),
+                    icon: const Icon(Icons.delete_forever, size: 22),
                     color: Colors.red[400],
-                    onPressed: () => _deleteMeasurement(measurement.id!),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Confirmer la suppression'),
+                          content: Text(
+                              'Voulez-vous vraiment supprimer "${measurement.clientName}" ?'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Annuler'),
+                            ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _deleteMeasurement(measurement.id!);
+                              },
+                              child: const Text('Supprimer',
+                                  style: TextStyle(color: Colors.red)),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
               ],
             ),
@@ -704,7 +1209,7 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF7FAFC),
+      backgroundColor: Colors.white,
       floatingActionButton: FloatingActionButton(
         backgroundColor: const Color(0xFF63519F),
         onPressed: _showAddClientBottomSheet,
@@ -716,39 +1221,39 @@ class _MyHomePageState extends State<MyHomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Mesures clients',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF2D3748),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 3,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search, color: Color(0xFFA0AEC0)),
-                    hintText: 'Rechercher un client...',
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+              const Align(
+                alignment: Alignment.center,
+                child: Text(
+                  'Mesures des clients',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F5F5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _searchNotifier,
+                  builder: (context, value, child) {
+                    return TextField(
+                      controller: _searchController,
+                      onChanged: (v) => _searchNotifier.value = v,
+                      decoration: const InputDecoration(
+                        prefixIcon: Icon(Icons.search),
+                        hintText: 'Rechercher un client...',
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
               Expanded(
                 child: StreamBuilder<List<Measurement>>(
                   stream: _getMeasurementsStream(),
@@ -768,23 +1273,28 @@ class _MyHomePageState extends State<MyHomePage> {
                     }
 
                     if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const Center(
+                      return Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.map, size: 64, color: Color(0xFFCBD5E0)),
-                            SizedBox(height: 16),
-                            Text(
-                              'Aucune mesure enregistrée',
+                            const Icon(Icons.people_alt_outlined,
+                                size: 60, color: Colors.grey),
+                            const SizedBox(height: 20),
+                            const Text(
+                              'Aucun client enregistré',
                               style: TextStyle(
                                 fontSize: 18,
-                                color: Color(0xFF718096),
+                                color: Colors.grey,
                               ),
                             ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Commencez par ajouter un client',
-                              style: TextStyle(color: Color(0xFFA0AEC0)),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Appuyez sur le bouton + pour ajouter un nouveau client',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
                             ),
                           ],
                         ),
@@ -792,12 +1302,48 @@ class _MyHomePageState extends State<MyHomePage> {
                     }
 
                     final measurements = snapshot.data!;
+                    final query = _searchController.text.toLowerCase();
+                    final filteredMeasurements = query.isEmpty
+                        ? measurements
+                        : measurements.where((m) {
+                      return _normalize(m.clientName)
+                          .toLowerCase()
+                          .contains(_normalize(query));
+                    }).toList();
 
-                    return ListView.separated(
-                      itemCount: measurements.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 16),
+                    if (filteredMeasurements.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.search_off,
+                                size: 60, color: Colors.grey),
+                            const SizedBox(height: 20),
+                            Text(
+                              'Aucun résultat pour "$query"',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            const Text(
+                              'Vérifiez l\'orthographe ou essayez un autre terme',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: filteredMeasurements.length,
                       itemBuilder: (context, index) {
-                        return _buildClientItem(measurements[index]);
+                        return _buildClientItem(
+                            filteredMeasurements[index], index);
                       },
                     );
                   },
