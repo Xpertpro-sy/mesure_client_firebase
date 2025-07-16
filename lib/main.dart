@@ -6,9 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 
+import 'model/measurement_model.dart';
 import 'pages/login_page.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
@@ -17,7 +18,11 @@ Future<void> main() async {
 
   await Hive.initFlutter();
 
-  // Correction: Nouvelle méthode pour activer la persistance offline
+  // Enregistrez l'adaptateur manuel
+  Hive.registerAdapter(MeasurementAdapter());
+
+  await Hive.openBox<Measurement>('pending_measurements');
+
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,

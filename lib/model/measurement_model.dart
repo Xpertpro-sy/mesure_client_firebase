@@ -1,17 +1,44 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive/hive.dart';
 
+part 'measurement_model.g.dart';
+
+@HiveType(typeId: 0)
 class Measurement {
+  @HiveField(0)
   final String? id;                // ID du document Firestore
+
+  @HiveField(1)
   final String clientName;
+
+  @HiveField(2)
   final DateTime createdAt;
+
+  @HiveField(3)
   final String garmentImageUrl;
+
+  @HiveField(4)
   final Map<String, dynamic> measurements;
+
+  @HiveField(5)
   final String modeImageUrl;
+
+  @HiveField(6)
   final String phoneNumber;
+
+  @HiveField(7)
   final double? price;
+
+  @HiveField(8)
   final double? advance;
+
+  @HiveField(9)
   final String userId;
+
+  @HiveField(10)
   final String status; // 'synced' ou 'pending'
+
+  @HiveField(11)
   final DateTime? syncedAt;
 
   Measurement({

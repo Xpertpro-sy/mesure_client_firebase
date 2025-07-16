@@ -91,19 +91,22 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _syncPendingMeasurements() async {
     if (!_isHiveInitialized) return;
-    final pendingMeasurements = _pendingBox.values.toList();
 
-    for (final measurement in pendingMeasurements) {
-      try {
-        await _firestore.collection('measurements').add({
-          ...measurement.toFirestore(),
-          'status': 'synced',
-          'syncedAt': FieldValue.serverTimestamp(),
-        });
-        await _pendingBox.delete(measurement.id);
-      } catch (e) {
-        print("Erreur de synchronisation: $e");
+    try {
+      // Utilisez les clés Hive au lieu des valeurs
+      for (var key in _pendingBox.keys) {
+        final measurement = _pendingBox.get(key);
+        if (measurement != null) {
+          await _firestore.collection('measurements').add({
+            ...measurement.toFirestore(),
+            'status': 'synced',
+            'syncedAt': FieldValue.serverTimestamp(),
+          });
+          await _pendingBox.delete(key); // Supprimez par clé Hive
+        }
       }
+    } catch (e) {
+      print("Erreur de synchronisation: $e");
     }
   }
 
@@ -173,6 +176,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (_isOnline) {
         await _firestore.collection('measurements').add(newMeasurement.toFirestore());
       } else {
+        // Stocker localement
         await _pendingBox.add(newMeasurement);
       }
 
