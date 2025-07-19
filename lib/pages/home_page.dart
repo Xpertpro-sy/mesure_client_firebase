@@ -7,7 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 
 import '../model/measurement_model.dart';
 
@@ -39,40 +39,80 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isOnline = true;
   late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   final _syncController = StreamController<void>();
-  late Box<Measurement> _pendingBox;
   bool _isHiveInitialized = false;
+  bool _isInitialSyncDone = false;
+
+  bool _isSyncing = false;
+  final Set<String> _syncedUuids = {};
+  Box<Measurement>? _pendingBox;
+
+  // @override
+  // void initState() {
+  //   _resetForm();
+  //
+  //   // Initialiser Hive en premier
+  //   _initHive().then((_) {
+  //     _initConnectivity();
+  //     _setupOfflineListener();
+  //   });
+  //
+  //   _searchController.addListener(() {
+  //     _searchNotifier.value = _searchController.text;
+  //   });
+  //
+  //   // Initialisez Hive avant tout
+  //   WidgetsBinding.instance.addPostFrameCallback((_) async {
+  //     await _initHive();
+  //     _initConnectivity();
+  //     _setupOfflineListener();
+  //   });
+  // }
 
   @override
   void initState() {
-    _resetForm();
+    super.initState();
 
-    // Initialiser Hive immédiatement
-    _initHive().then((_) {
-      _initConnectivity();
-      _setupOfflineListener();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _resetForm();
+      _initHive().then((_) {
+        _initConnectivity();
+        _setupOfflineListener();
+      });
     });
 
     _searchController.addListener(() {
       _searchNotifier.value = _searchController.text;
     });
-
-    // Initialisez Hive avant tout
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _initHive();
-      _initConnectivity();
-      _setupOfflineListener();
-    });
   }
 
-  // Simplifier _initHive
+  // Simplifier _init Hive
   Future<void> _initHive() async {
     try {
+      // Initialiser Hive pour Flutter - AJOUTER CETTE LIGNE
       await Hive.initFlutter();
+
+      // Vérifier si Hive est déjà initialisé
+      if (!Hive.isAdapterRegistered(0)) {
+        Hive.registerAdapter(MeasurementAdapter());
+      }
+
+      // Ouvrir la boîte
       _pendingBox = await Hive.openBox<Measurement>('pending_measurements');
+
+      // Migration des anciennes données - VÉRIFIER NULLITÉ
+      if (_pendingBox != null) {
+        final keys = _pendingBox!.keys.toList();
+        for (var key in keys) {
+          final m = _pendingBox!.get(key);
+          if (m != null && m.uuid.isEmpty) {
+            await _pendingBox!.put(key, m.copyWith(uuid: const Uuid().v4()));
+          }
+        }
+      }
+
       setState(() => _isHiveInitialized = true);
     } catch (e) {
       print("Erreur d'initialisation Hive: $e");
-      // Fallback pour éviter le blocage
       setState(() => _isHiveInitialized = true);
     }
   }
@@ -89,6 +129,7 @@ class _MyHomePageState extends State<MyHomePage> {
   void _setupOfflineListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
+        .distinct() // Évite les doublons
         .listen((List<ConnectivityResult> results) {
       final newStatus = results.any((result) => result != ConnectivityResult.none);
 
@@ -100,33 +141,65 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _syncPendingMeasurements() async {
-    if (!_isHiveInitialized || !_isOnline) return;
+    // 1. Vérifier les préconditions
+    if (!_isHiveInitialized || !_isOnline || _isSyncing || _pendingBox == null) {
+      return;
+    }
 
-    final pendingKeys = _pendingBox.keys.toList();
-    for (final key in pendingKeys) {
-      final measurement = _pendingBox.get(key);
-      if (measurement == null) continue;
+    setState(() => _isSyncing = true);
 
-      try {
-        // Solution simplifiée sans requête complexe
-        await _firestore.collection('measurements').add(measurement.toFirestore());
-        await _pendingBox.delete(key);
-      } catch (e) {
-        print("Erreur de synchronisation: $e");
+    try {
+      final pendingKeys = _pendingBox?.keys.toList();
+
+      for (final key in pendingKeys!) {
+        final measurement = _pendingBox?.get(key);
+        if (measurement == null) continue;
+
+        // 2. Vérifier si la mesure a déjà été synchronisée
+        if (_syncedUuids.contains(measurement.uuid)) {
+          await _pendingBox?.delete(key);
+          continue;
+        }
+
+        try {
+          // 3. Vérifier l'existence dans Firestore
+          final query = await _firestore
+              .collection('measurements')
+              .where('uuid', isEqualTo: measurement.uuid)
+              .limit(1)
+              .get();
+
+          // 4. Synchroniser seulement si elle n'existe pas
+          if (query.docs.isEmpty) {
+            await _firestore.collection('measurements').add(measurement.toFirestore());
+          }
+
+          // 5. Mettre à jour les caches
+          _syncedUuids.add(measurement.uuid);
+          await _pendingBox?.delete(key);
+        } catch (e) {
+          print("Erreur de synchronisation pour ${measurement.uuid}: $e");
+        }
       }
+    } catch (e) {
+      print("Erreur générale de synchronisation: $e");
+    } finally {
+      setState(() => _isSyncing = false);
     }
   }
 
   void _resetForm() {
     _nomCompletController.clear();
+
     for (var input in _currentMeasureInputs) {
-      input.controller.dispose();
+      input.controller.dispose(); // Dispose ici
     }
+
     _currentMeasureInputs = [
-      MeasureInput(
-        label: 'T',
-        controller: TextEditingController(text: '0'),
-      ),
+    MeasureInput(
+    label: 'T',
+    controller: TextEditingController(text: '0'),
+    ),
     ];
     _prix = null;
     _avance = null;
@@ -134,19 +207,22 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void dispose() {
-    _searchController.dispose();
-    _nomCompletController.dispose();
     _searchNotifier.dispose();
-    for (var input in _currentMeasureInputs) {
-      input.controller.dispose();
-    }
     _syncController.close();
     _connectivitySubscription.cancel();
+
+    // Ne disposez pas les contrôleurs principaux ici
+    // Ils sont gérés dans _resetForm
     super.dispose();
   }
 
-  Future<void> _createMeasurement() async {
-    if (_nomCompletController.text.isEmpty) {
+  Future<void> _createMeasurement({
+    required String clientName,
+    required Map<String, dynamic> mesures,
+    double? prix,
+    double? avance,
+  }) async {
+    if (clientName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Veuillez saisir le nom du client')),
       );
@@ -156,45 +232,41 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() => _isLoading = true);
 
     try {
-      final mesures = <String, dynamic>{};
-      for (final input in _currentMeasureInputs) {
-        final value = input.controller.text.trim();
-        final numericValue = double.tryParse(value);
-        if (numericValue == null) {
+      // Vérifier les valeurs numériques
+      for (final entry in mesures.entries) {
+        if (entry.value is! double) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Valeur invalide pour ${input.label}')),
+            SnackBar(content: Text('Valeur invalide pour ${entry.key}')),
           );
           return;
         }
-        mesures[input.label] = numericValue;
       }
 
       final newMeasurement = Measurement(
-        clientName: _nomCompletController.text.trim(),
+        clientName: clientName.trim(),
         createdAt: DateTime.now(),
         measurements: mesures,
-        price: _prix,
-        advance: _avance,
+        price: prix,
+        advance: avance,
         userId: FirebaseAuth.instance.currentUser!.uid,
         status: _isOnline ? 'synced' : 'pending',
         syncedAt: _isOnline ? DateTime.now() : null,
+        uuid: const Uuid().v4(),
       );
 
       if (_isOnline) {
         await _firestore.collection('measurements').add(newMeasurement.toFirestore());
       } else {
-        // Stocker localement
-        await _pendingBox.add(newMeasurement);
-        // FORCER LE REBUILD DE L'INTERFACE
-        setState(() {});
+        await _pendingBox?.add(newMeasurement);
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Mesures enregistrées avec succès!')),
       );
 
-      if (mounted) Navigator.pop(context);
+      // Mettre à jour l'interface
       _resetForm();
+      if (mounted) setState(() {});
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erreur: $e')),
@@ -226,7 +298,7 @@ class _MyHomePageState extends State<MyHomePage> {
     try {
       if (id.startsWith('pending_')) {
         final key = int.parse(id.split('_')[1]);
-        await _pendingBox.delete(key); // Suppression par clé Hive
+        await _pendingBox?.delete(key); // Suppression par clé Hive
       } else {
         // Supprimer de Firestore
         await _firestore.collection('measurements').doc(id).delete();
@@ -251,6 +323,9 @@ class _MyHomePageState extends State<MyHomePage> {
   void _showLabelSelector(BuildContext context, MeasureInput measureInput) async {
     List<String> tempSelectedLabels = [];
     bool isUppercase = true;
+
+    // Crée une copie des labels disponibles pour éviter de modifier la liste originale
+    List<String> workingLabels = List.from(_availableLabels);
 
     final selectedLabel = await showDialog<String>(
       context: context,
@@ -285,14 +360,11 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                         IconButton(
                           icon: Icon(
-                              isUppercase
-                                  ? Icons.text_fields
-                                  : Icons.text_fields_outlined,
-                              color: const Color(0xFF63519F)),
+                            isUppercase ? Icons.text_fields : Icons.text_fields_outlined,
+                            color: const Color(0xFF63519F),
+                          ),
                           onPressed: () => setState(() => isUppercase = !isUppercase),
-                          tooltip: isUppercase
-                              ? 'Passer en minuscules'
-                              : 'Passer en majuscules',
+                          tooltip: isUppercase ? 'Passer en minuscules' : 'Passer en majuscules',
                         ),
                       ],
                     ),
@@ -300,8 +372,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
                   if (tempSelectedLabels.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                       decoration: BoxDecoration(
                         color: const Color(0x2463519E),
                         borderRadius: BorderRadius.circular(12),
@@ -312,8 +383,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.check_circle,
-                              color: Color(0xFF48BB78), size: 20),
+                          const Icon(Icons.check_circle, color: Color(0xFF48BB78), size: 20),
                           const SizedBox(width: 8),
                           Text(
                             'Sélection: ${tempSelectedLabels.join(" + ")}',
@@ -341,92 +411,96 @@ class _MyHomePageState extends State<MyHomePage> {
                   Container(
                     constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: GridView.builder(
-                      shrinkWrap: true,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 6,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 1.0,
-                      ),
-                      itemCount: _availableLabels.length,
-                      itemBuilder: (context, index) {
-                        final label = _availableLabels[index];
-                        final isSelected = tempSelectedLabels.contains(label);
-                        String displayLabel = label;
-                        if (label.length == 1) {
-                          displayLabel = isUppercase ? label.toUpperCase() : label.toLowerCase();
-                        } else {
-                          displayLabel = label;
-                        }
+                    child: Expanded( // Utilisation de Expanded pour gérer l'espace
+                      child: GridView.builder(
+                        shrinkWrap: true,
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 6,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                          childAspectRatio: 1.0,
+                        ),
+                        itemCount: workingLabels.length,
+                        itemBuilder: (context, index) {
+                          final label = workingLabels[index];
+                          final isSelected = tempSelectedLabels.contains(label);
+                          String displayLabel = label;
 
-                        return GestureDetector(
-                          onLongPress: () {
-                            if (label.length == 1) {
-                              setState(() {
-                                final newLabel = label == label.toUpperCase()
-                                    ? label.toLowerCase()
-                                    : label.toUpperCase();
-                                final newIndex = _availableLabels.indexOf(label);
-                                if (newIndex != -1) {
-                                  _availableLabels[newIndex] = newLabel;
-                                }
-                                if (isSelected) {
-                                  tempSelectedLabels[tempSelectedLabels.indexOf(label)] = newLabel;
-                                }
-                              });
-                            }
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            decoration: BoxDecoration(
-                              color: isSelected ? const Color(0xFFEBF8FF) : const Color(0xFFF7FAFC),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected ? const Color(0xFF63519F) : const Color(0x2463519E),
-                                width: isSelected ? 2 : 1,
-                              ),
-                              boxShadow: isSelected
-                                  ? [
-                                BoxShadow(
-                                  color: const Color(0x2463519E).withOpacity(0.2),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                )
-                              ]
-                                  : null,
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
+                          // Appliquer la casse actuelle
+                          if (label.length == 1) {
+                            displayLabel = isUppercase ? label.toUpperCase() : label.toLowerCase();
+                          }
+
+                          return GestureDetector(
+                            key: ValueKey(label), // Clé unique
+                            onLongPress: () {
+                              if (label.length == 1) {
+                                setState(() {
+                                  final newLabel = displayLabel == displayLabel.toUpperCase()
+                                      ? displayLabel.toLowerCase()
+                                      : displayLabel.toUpperCase();
+
+                                  // Mettre à jour la liste de travail
+                                  workingLabels[index] = newLabel;
+
+                                  // Mettre à jour la sélection si nécessaire
+                                  if (isSelected) {
+                                    tempSelectedLabels[tempSelectedLabels.indexOf(label)] = newLabel;
+                                  }
+                                });
+                              }
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              curve: Curves.easeInOut,
+                              decoration: BoxDecoration(
+                                color: isSelected ? const Color(0xFFEBF8FF) : const Color(0xFFF7FAFC),
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: () {
-                                  setState(() {
-                                    if (isSelected) {
-                                      tempSelectedLabels.remove(label);
-                                    } else if (tempSelectedLabels.length < 2) {
-                                      tempSelectedLabels.add(label);
-                                    }
-                                  });
-                                },
-                                child: Center(
-                                  child: Text(
-                                    displayLabel,
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: isSelected
-                                          ? const Color(0xFF2B6CB0)
-                                          : const Color(0xFF4A5568),
+                                border: Border.all(
+                                  color: isSelected ? const Color(0xFF63519F) : const Color(0x2463519E),
+                                  width: isSelected ? 2 : 1,
+                                ),
+                                boxShadow: isSelected
+                                    ? [
+                                  BoxShadow(
+                                    color: const Color(0x2463519E).withOpacity(0.2),
+                                    blurRadius: 6,
+                                    offset: const Offset(0, 2),
+                                  )
+                                ]
+                                    : null,
+                              ),
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        tempSelectedLabels.remove(label);
+                                      } else if (tempSelectedLabels.length < 2) {
+                                        tempSelectedLabels.add(label);
+                                      }
+                                    });
+                                  },
+                                  child: Center(
+                                    child: Text(
+                                      displayLabel,
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: isSelected
+                                            ? const Color(0xFF2B6CB0)
+                                            : const Color(0xFF4A5568),
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
 
@@ -451,7 +525,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         onPressed: tempSelectedLabels.isNotEmpty
                             ? () {
                           final combinedLabel = tempSelectedLabels.join();
-                          Navigator.pop(context, combinedLabel);
+                          Navigator.of(context).pop(combinedLabel);
                         }
                             : null,
                         style: ElevatedButton.styleFrom(
@@ -460,8 +534,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         ),
                         child: const Row(
                           children: [
@@ -489,18 +562,28 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   void _showAddClientBottomSheet() {
-    final TextEditingController _prixController = TextEditingController(text: _prix?.toString() ?? '');
-    final TextEditingController _avanceController = TextEditingController(text: _avance?.toString() ?? '');
-    final TextEditingController _resteController = TextEditingController();
+    // Créer des contrôleurs locaux basés sur l'état actuel
+    final localNomController = TextEditingController(text: _nomCompletController.text);
 
-    void _updateReste() {
-      final prix = double.tryParse(_prixController.text) ?? 0;
-      final avance = double.tryParse(_avanceController.text) ?? 0;
+    final localMeasureInputs = _currentMeasureInputs.map((input) {
+      return MeasureInput(
+        label: input.label,
+        controller: TextEditingController(text: input.controller.text),
+      );
+    }).toList();
+
+    final localPrixController = TextEditingController(text: _prix?.toString() ?? '');
+    final localAvanceController = TextEditingController(text: _avance?.toString() ?? '');
+    final localResteController = TextEditingController();
+
+    void updateReste() {
+      final prix = double.tryParse(localPrixController.text) ?? 0;
+      final avance = double.tryParse(localAvanceController.text) ?? 0;
       final reste = prix - avance;
-      _resteController.text = reste.toStringAsFixed(2);
+      localResteController.text = reste.toStringAsFixed(2);
     }
 
-    _updateReste();
+    updateReste();
 
     showModalBottomSheet(
       context: context,
@@ -513,39 +596,37 @@ class _MyHomePageState extends State<MyHomePage> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      InkWell(
-                        onTap: () => _showLabelSelector(context, input),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 2, horizontal: 8),
-                          decoration: BoxDecoration(
-                            color: const Color(0x2463519E),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            input.label,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF63519F),
-                            ),
-                          ),
+                Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  InkWell(
+                    onTap: () => _showLabelSelector(context, input),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0x2463519E),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        input.label,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF63519F),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close,
-                            size: 20, color: Colors.red),
-                        onPressed: () {
-                          setStateLocal(() {
-                            _currentMeasureInputs.remove(input);
-                            input.controller.dispose();
-                          });
-                        },
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
+                    ),
+                  ),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 20, color: Colors.red),
+                      onPressed: () {
+                        setStateLocal(() {
+                          localMeasureInputs.remove(input);
+                          input.controller.dispose();
+                        });
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -553,18 +634,15 @@ class _MyHomePageState extends State<MyHomePage> {
                     controller: input.controller,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      contentPadding: const EdgeInsets.symmetric(
-                          vertical: 8, horizontal: 12),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8)),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(color: Colors.grey.shade300),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(
-                            color: Color(0xFF63519F), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFF63519F), width: 2),
                       ),
                     ),
                   ),
@@ -593,12 +671,14 @@ class _MyHomePageState extends State<MyHomePage> {
                         children: [
                           const Text(
                             'Nouveau client',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           IconButton(
                             icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.pop(context),
+                            onPressed: () {
+                              // Fermer simplement le bottom sheet
+                              Navigator.of(context).pop();
+                            },
                           ),
                         ],
                       ),
@@ -609,13 +689,11 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                       const SizedBox(height: 8),
                       TextField(
-                        controller: _nomCompletController,
+                        controller: localNomController,
                         decoration: InputDecoration(
                           hintText: 'Nom et prénom du client',
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -631,7 +709,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         childAspectRatio: 0.8,
-                        children: _currentMeasureInputs
+                        children: localMeasureInputs
                             .map((input) => buildMeasureInput(input))
                             .toList(),
                       ),
@@ -642,20 +720,19 @@ class _MyHomePageState extends State<MyHomePage> {
                           onPressed: () {
                             setStateLocal(() {
                               final availableLabels = _availableLabels
-                                  .where((label) => !_currentMeasureInputs
+                                  .where((label) => !localMeasureInputs
                                   .any((input) => input.label == label))
                                   .toList();
 
                               if (availableLabels.isNotEmpty) {
-                                _currentMeasureInputs.add(MeasureInput(
+                                localMeasureInputs.add(MeasureInput(
                                   label: availableLabels.first,
                                   controller: TextEditingController(text: '0'),
                                 ));
                               } else {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                      content:
-                                      Text('Toutes les lettres sont utilisées')),
+                                      content: Text('Toutes les lettres sont utilisées')),
                                 );
                               }
                             });
@@ -694,7 +771,7 @@ class _MyHomePageState extends State<MyHomePage> {
                               SizedBox(
                                 width: 100,
                                 child: TextField(
-                                  controller: _prixController,
+                                  controller: localPrixController,
                                   keyboardType: TextInputType.number,
                                   textAlign: TextAlign.right,
                                   style: const TextStyle(
@@ -708,8 +785,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     hintText: '0',
                                   ),
                                   onChanged: (_) {
-                                    setStateLocal(_updateReste);
-                                    _prix = double.tryParse(_prixController.text);
+                                    setStateLocal(updateReste);
                                   },
                                 ),
                               ),
@@ -736,7 +812,7 @@ class _MyHomePageState extends State<MyHomePage> {
                               SizedBox(
                                 width: 100,
                                 child: TextField(
-                                  controller: _avanceController,
+                                  controller: localAvanceController,
                                   keyboardType: TextInputType.number,
                                   textAlign: TextAlign.right,
                                   style: const TextStyle(
@@ -750,8 +826,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                     hintText: '0',
                                   ),
                                   onChanged: (_) {
-                                    setStateLocal(_updateReste);
-                                    _avance = double.tryParse(_avanceController.text);
+                                    setStateLocal(updateReste);
                                   },
                                 ),
                               ),
@@ -776,13 +851,11 @@ class _MyHomePageState extends State<MyHomePage> {
                                     fontSize: 16, fontWeight: FontWeight.w500),
                               ),
                               Text(
-                                _resteController.text,
+                                localResteController.text,
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
-                                  color: (double.tryParse(_resteController.text) ??
-                                      0) >
-                                      0
+                                  color: (double.tryParse(localResteController.text) ?? 0) > 0
                                       ? Colors.red
                                       : Colors.green,
                                 ),
@@ -793,7 +866,40 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton(
-                        onPressed: _isLoading ? null : _createMeasurement,
+                        onPressed: () async {
+                          // Fermer le bottom sheet immédiatement
+                          Navigator.of(context).pop();
+
+                          // Préparer les données pour la création
+                          final clientName = localNomController.text;
+                          final mesures = <String, dynamic>{};
+                          for (final input in localMeasureInputs) {
+                            final value = input.controller.text.trim();
+                            final numericValue = double.tryParse(value);
+                            if (numericValue != null) {
+                              mesures[input.label] = numericValue;
+                            }
+                          }
+                          final prix = double.tryParse(localPrixController.text);
+                          final avance = double.tryParse(localAvanceController.text);
+
+                          // Disposer les contrôleurs locaux
+                          localNomController.dispose();
+                          localPrixController.dispose();
+                          localAvanceController.dispose();
+                          localResteController.dispose();
+                          for (var input in localMeasureInputs) {
+                            input.controller.dispose();
+                          }
+
+                          // Appeler la création avec les données préparées
+                          await _createMeasurement(
+                              clientName: clientName,
+                              mesures: mesures,
+                              prix: prix,
+                              avance: avance
+                          );
+                        },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF63519F),
                           foregroundColor: Colors.white,
@@ -804,8 +910,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                         child: _isLoading
                             ? const CircularProgressIndicator(color: Colors.white)
-                            : const Text('Enregistrer',
-                            style: TextStyle(fontSize: 16)),
+                            : const Text('Enregistrer', style: TextStyle(fontSize: 16)),
                       ),
                       const SizedBox(height: 20),
                     ],
@@ -1107,11 +1212,13 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   List<Measurement> _getPendingMeasurements() {
-    if (!_isHiveInitialized) return [];
+    if (!_isHiveInitialized || _pendingBox == null) {
+      return [];
+    }
 
-    return _pendingBox.keys.map((key) {
-      final measurement = _pendingBox.get(key);
-      return measurement?.copyWith(id: 'pending_$key'); // Clé correcte
+    return _pendingBox!.keys.map((key) {
+      final measurement = _pendingBox!.get(key);
+      return measurement?.copyWith(id: 'pending_$key');
     }).whereType<Measurement>().toList();
   }
 
@@ -1313,23 +1420,22 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                   ],
                 ),
-
-                if (isPending)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.amber,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.warning, size: 16, color: Colors.white),
-                    ),
-                  ),
               ],
             ),
           ),
+          if (isPending)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.amber,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.warning, size: 16, color: Colors.white),
+              ),
+            ),
         ],
       ),
     );

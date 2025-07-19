@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
+import 'package:uuid/uuid.dart';
 
 part 'measurement_model.g.dart';
 
@@ -41,6 +44,9 @@ class Measurement {
   @HiveField(11)
   final DateTime? syncedAt;
 
+  @HiveField(12)
+  final String uuid;
+
   Measurement({
     this.id,
     required this.clientName,
@@ -54,7 +60,12 @@ class Measurement {
     required this.userId,
     this.status = 'synced',
     this.syncedAt,
+    required this.uuid,
   });
+
+  static String _generateSyncHash() {
+    return '${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(1000)}';
+  }
 
   /// Convertit un document Firestore en objet Measurement
   factory Measurement.fromFirestore(
@@ -84,6 +95,7 @@ class Measurement {
       syncedAt: data['syncedAt'] != null
           ? (data['syncedAt'] as Timestamp).toDate()
           : null,
+      uuid: data['uuid'] as String? ?? const Uuid().v4(),
     );
   }
 
@@ -101,6 +113,7 @@ class Measurement {
       'userId': userId,
       'status': status,
       'syncedAt': syncedAt != null ? Timestamp.fromDate(syncedAt!) : null,
+      'uuid': uuid,
     };
   }
 
@@ -118,6 +131,7 @@ class Measurement {
     String? userId,
     String? status,
     DateTime? syncedAt,
+    String? uuid,
   }) {
     return Measurement(
       id: id ?? this.id,
@@ -132,6 +146,7 @@ class Measurement {
       userId: userId ?? this.userId,
       status: status ?? this.status,
       syncedAt: syncedAt ?? this.syncedAt,
+      uuid: uuid ?? this.uuid,
     );
   }
 }

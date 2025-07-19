@@ -17,15 +17,10 @@ void main() async {
   );
 
   // Configuration du cache Firestore
-  // await FirebaseFirestore.instance.clearPersistence();
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
-
-  await Hive.initFlutter();
-  Hive.registerAdapter(MeasurementAdapter());
-  await Hive.openBox<Measurement>('pending_measurements');
 
   runApp(const MyApp());
 }
