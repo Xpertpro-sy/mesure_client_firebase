@@ -25,8 +25,8 @@ class _NavBarPageState extends State<NavBarPage> {
     screens = [
       // const SizedBox.shrink(),
       MyHomePage(),
-      AutrePage(),
       PersonnalisationPage(),
+      AutrePage(),
       ProfilPage(),
     ];
   }
@@ -55,8 +55,8 @@ class _NavBarPageState extends State<NavBarPage> {
               label: 'Accueil'
           ),
           // BottomNavigationBarItem(icon: Icon(Icons.notifications_sharp), label: 'Notification'),
-          BottomNavigationBarItem(icon: Icon(Icons.notifications_sharp), label: 'Autre'),
           BottomNavigationBarItem(icon: Icon(Icons.favorite), label: 'Personnalisation'),
+          BottomNavigationBarItem(icon: Icon(Icons.notifications_sharp), label: 'Personnalisation'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profil'),
           /*BottomNavigationBarItem(icon: CircleAvatar(
             backgroundImage: AssetImage(
