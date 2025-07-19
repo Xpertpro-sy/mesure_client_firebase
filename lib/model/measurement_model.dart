@@ -47,6 +47,9 @@ class Measurement {
   @HiveField(12)
   final String uuid;
 
+  @HiveField(13)
+  final String? configId;
+
   Measurement({
     this.id,
     required this.clientName,
@@ -61,6 +64,7 @@ class Measurement {
     this.status = 'synced',
     this.syncedAt,
     required this.uuid,
+    this.configId,
   });
 
   static String _generateSyncHash() {
@@ -96,6 +100,7 @@ class Measurement {
           ? (data['syncedAt'] as Timestamp).toDate()
           : null,
       uuid: data['uuid'] as String? ?? const Uuid().v4(),
+      configId: data['configId'] as String? ?? "",
     );
   }
 
@@ -114,6 +119,7 @@ class Measurement {
       'status': status,
       'syncedAt': syncedAt != null ? Timestamp.fromDate(syncedAt!) : null,
       'uuid': uuid,
+      'configId': configId,
     };
   }
 
@@ -132,6 +138,7 @@ class Measurement {
     String? status,
     DateTime? syncedAt,
     String? uuid,
+    String? configId,
   }) {
     return Measurement(
       id: id ?? this.id,
@@ -147,6 +154,7 @@ class Measurement {
       status: status ?? this.status,
       syncedAt: syncedAt ?? this.syncedAt,
       uuid: uuid ?? this.uuid,
+      configId: configId ?? this.configId,
     );
   }
 }

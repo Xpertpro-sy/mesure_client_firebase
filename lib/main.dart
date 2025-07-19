@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:hive_flutter/adapters.dart';
 
+import 'model/measurement_config.dart';
 import 'model/measurement_model.dart';
 import 'pages/login_page.dart';
 
@@ -16,13 +17,16 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-
-
   // Configuration du cache Firestore
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
+
+  // Enregistrer les adaptateurs Hive
+  Hive.registerAdapter(MeasurementAdapter());
+  Hive.registerAdapter(MeasurementConfigAdapter());
+  Hive.registerAdapter(CustomMeasurementAdapter());
 
   runApp(const MyApp());
 }

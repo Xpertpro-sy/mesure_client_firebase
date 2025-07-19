@@ -9,6 +9,7 @@ import 'package:hive_flutter/adapters.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../model/measurement_config.dart';
 import '../model/measurement_model.dart';
 
 import 'package:rxdart/rxdart.dart';
@@ -174,18 +175,36 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  // void _resetForm() {
+  //   _nomCompletController.clear();
+  //
+  //   for (var input in _currentMeasureInputs) {
+  //     input.controller.dispose(); // Dispose ici
+  //   }
+  //
+  //   _currentMeasureInputs = [
+  //   MeasureInput(
+  //   label: 'T',
+  //   controller: TextEditingController(text: '0'),
+  //   ),
+  //   ];
+  //   _prix = null;
+  //   _avance = null;
+  // }
+
   void _resetForm() {
     _nomCompletController.clear();
 
+    // Dispose les anciens contrôleurs
     for (var input in _currentMeasureInputs) {
-      input.controller.dispose(); // Dispose ici
+      input.controller.dispose();
     }
 
     _currentMeasureInputs = [
-    MeasureInput(
-    label: 'T',
-    controller: TextEditingController(text: '0'),
-    ),
+      MeasureInput(
+        label: 'T',
+        controller: TextEditingController(text: '0'),
+      ),
     ];
     _prix = null;
     _avance = null;
@@ -193,12 +212,20 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   void dispose() {
+    // Dispose une seule fois chaque objet
     _searchNotifier.dispose();
     _syncController.close();
     _connectivitySubscription.cancel();
 
-    // Ne disposez pas les contrôleurs principaux ici
-    // Ils sont gérés dans _resetForm
+    // Dispose les contrôleurs de mesure
+    for (var input in _currentMeasureInputs) {
+      input.controller.dispose();
+    }
+
+    // Dispose les autres contrôleurs
+    _nomCompletController.dispose();
+    _searchController.dispose();
+
     super.dispose();
   }
 
@@ -209,9 +236,11 @@ class _MyHomePageState extends State<MyHomePage> {
     double? avance,
   }) async {
     if (clientName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez saisir le nom du client')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Veuillez saisir le nom du client')),
+        );
+      }
       return;
     }
 
@@ -246,9 +275,11 @@ class _MyHomePageState extends State<MyHomePage> {
         await _pendingBox?.add(newMeasurement);
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mesures enregistrées avec succès!')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mesures enregistrées avec succès!')),
+        );
+      }
 
       // Mettre à jour l'interface
       _resetForm();
@@ -397,96 +428,94 @@ class _MyHomePageState extends State<MyHomePage> {
                   Container(
                     constraints: const BoxConstraints(maxHeight: 300),
                     margin: const EdgeInsets.symmetric(vertical: 8),
-                    child: Expanded( // Utilisation de Expanded pour gérer l'espace
-                      child: GridView.builder(
-                        shrinkWrap: true,
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 6,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1.0,
-                        ),
-                        itemCount: workingLabels.length,
-                        itemBuilder: (context, index) {
-                          final label = workingLabels[index];
-                          final isSelected = tempSelectedLabels.contains(label);
-                          String displayLabel = label;
+                    child: GridView.builder(
+                      shrinkWrap: true,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 6,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
+                        childAspectRatio: 1.0,
+                      ),
+                      itemCount: workingLabels.length,
+                      itemBuilder: (context, index) {
+                        final label = workingLabels[index];
+                        final isSelected = tempSelectedLabels.contains(label);
+                        String displayLabel = label;
 
-                          // Appliquer la casse actuelle
-                          if (label.length == 1) {
-                            displayLabel = isUppercase ? label.toUpperCase() : label.toLowerCase();
-                          }
+                        // Appliquer la casse actuelle
+                        if (label.length == 1) {
+                          displayLabel = isUppercase ? label.toUpperCase() : label.toLowerCase();
+                        }
 
-                          return GestureDetector(
-                            key: ValueKey(label), // Clé unique
-                            onLongPress: () {
-                              if (label.length == 1) {
-                                setState(() {
-                                  final newLabel = displayLabel == displayLabel.toUpperCase()
-                                      ? displayLabel.toLowerCase()
-                                      : displayLabel.toUpperCase();
+                        return GestureDetector(
+                          key: ValueKey(label), // Clé unique
+                          onLongPress: () {
+                            if (label.length == 1) {
+                              setState(() {
+                                final newLabel = displayLabel == displayLabel.toUpperCase()
+                                    ? displayLabel.toLowerCase()
+                                    : displayLabel.toUpperCase();
 
-                                  // Mettre à jour la liste de travail
-                                  workingLabels[index] = newLabel;
+                                // Mettre à jour la liste de travail
+                                workingLabels[index] = newLabel;
 
-                                  // Mettre à jour la sélection si nécessaire
-                                  if (isSelected) {
-                                    tempSelectedLabels[tempSelectedLabels.indexOf(label)] = newLabel;
-                                  }
-                                });
-                              }
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              curve: Curves.easeInOut,
-                              decoration: BoxDecoration(
-                                color: isSelected ? const Color(0xFFEBF8FF) : const Color(0xFFF7FAFC),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isSelected ? const Color(0xFF63519F) : const Color(0x2463519E),
-                                  width: isSelected ? 2 : 1,
-                                ),
-                                boxShadow: isSelected
-                                    ? [
-                                  BoxShadow(
-                                    color: const Color(0x2463519E).withOpacity(0.2),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  )
-                                ]
-                                    : null,
+                                // Mettre à jour la sélection si nécessaire
+                                if (isSelected) {
+                                  tempSelectedLabels[tempSelectedLabels.indexOf(label)] = newLabel;
+                                }
+                              });
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            decoration: BoxDecoration(
+                              color: isSelected ? const Color(0xFFEBF8FF) : const Color(0xFFF7FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSelected ? const Color(0xFF63519F) : const Color(0x2463519E),
+                                width: isSelected ? 2 : 1,
                               ),
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () {
-                                    setState(() {
-                                      if (isSelected) {
-                                        tempSelectedLabels.remove(label);
-                                      } else if (tempSelectedLabels.length < 2) {
-                                        tempSelectedLabels.add(label);
-                                      }
-                                    });
-                                  },
-                                  child: Center(
-                                    child: Text(
-                                      displayLabel,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: isSelected
-                                            ? const Color(0xFF2B6CB0)
-                                            : const Color(0xFF4A5568),
-                                      ),
+                              boxShadow: isSelected
+                                  ? [
+                                BoxShadow(
+                                  color: const Color(0x2463519E).withOpacity(0.2),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                )
+                              ]
+                                  : null,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () {
+                                  setState(() {
+                                    if (isSelected) {
+                                      tempSelectedLabels.remove(label);
+                                    } else if (tempSelectedLabels.length < 2) {
+                                      tempSelectedLabels.add(label);
+                                    }
+                                  });
+                                },
+                                child: Center(
+                                  child: Text(
+                                    displayLabel,
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: isSelected
+                                          ? const Color(0xFF2B6CB0)
+                                          : const Color(0xFF4A5568),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
                     ),
                   ),
 
@@ -550,7 +579,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void _showAddClientBottomSheet() {
     // Créer des contrôleurs locaux basés sur l'état actuel
     final localNomController = TextEditingController(text: _nomCompletController.text);
-
     final localMeasureInputs = _currentMeasureInputs.map((input) {
       return MeasureInput(
         label: input.label,
@@ -582,37 +610,40 @@ class _MyHomePageState extends State<MyHomePage> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  InkWell(
-                    onTap: () => _showLabelSelector(context, input),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0x2463519E),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        input.label,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF63519F),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => _showLabelSelector(context, input),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0x2463519E),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              input.label,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF63519F),
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 20, color: Colors.red),
-                      onPressed: () {
-                        setStateLocal(() {
-                          localMeasureInputs.remove(input);
-                          input.controller.dispose();
-                        });
-                      },
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20, color: Colors.red),
+                        onPressed: () {
+                          setStateLocal(() {
+                            localMeasureInputs.remove(input);
+                            input.controller.dispose();
+                          });
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -701,35 +732,118 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                       const SizedBox(height: 24),
                       Align(
-                        alignment: Alignment.centerRight,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setStateLocal(() {
-                              final availableLabels = _availableLabels
-                                  .where((label) => !localMeasureInputs
-                                  .any((input) => input.label == label))
-                                  .toList();
+                        alignment: Alignment.center,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.45),
+                                    child: ElevatedButton(
+                                      onPressed: () async {
+                                        final user = FirebaseAuth.instance.currentUser;
+                                        if (user == null) return;
 
-                              if (availableLabels.isNotEmpty) {
-                                localMeasureInputs.add(MeasureInput(
-                                  label: availableLabels.first,
-                                  controller: TextEditingController(text: '0'),
-                                ));
-                              } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content: Text('Toutes les lettres sont utilisées')),
-                                );
-                              }
-                            });
+                                        try {
+                                          final doc = await FirebaseFirestore.instance
+                                              .collection('measurement_configs')
+                                              .doc(user.uid)
+                                              .get();
+
+                                          if (!doc.exists) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(content: Text('Aucune configuration trouvée')),
+                                            );
+                                            return;
+                                          }
+
+                                          final config = MeasurementConfig.fromFirestore(doc);
+
+                                          setStateLocal(() {
+                                            // Ajouter chaque mesure personnalisée
+                                            for (final measure in config.measurements) {
+                                              final exists = localMeasureInputs.any(
+                                                      (input) => input.label == measure.name
+                                              );
+
+                                              if (!exists) {
+                                                localMeasureInputs.add(MeasureInput(
+                                                  label: measure.name,
+                                                  controller: TextEditingController(
+                                                      text: measure.defaultValue ?? '0'
+                                                  ),
+                                                ));
+                                              }
+                                            }
+                                          });
+
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('${config.measurements.length} mesures importées')),
+                                          );
+                                        } catch (e) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(content: Text('Erreur d\'importation: $e')),
+                                          );
+                                        }
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF4CAF50),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(10),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Importer mes mesures',
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(maxWidth: constraints.maxWidth * 0.45),
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        setStateLocal(() {
+                                          final availableLabels = _availableLabels
+                                              .where((label) => !localMeasureInputs
+                                              .any((input) => input.label == label))
+                                              .toList();
+
+                                          if (availableLabels.isNotEmpty) {
+                                            localMeasureInputs.add(MeasureInput(
+                                              label: availableLabels.first,
+                                              controller: TextEditingController(text: '0'),
+                                            ));
+                                          } else {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              const SnackBar(
+                                                  content: Text('Toutes les lettres sont utilisées')),
+                                            );
+                                          }
+                                        });
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF63519F),
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      child: const Text(
+                                        'Ajouter une mesure',
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
                           },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF63519F),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: const Text('Ajouter une mesure'),
                         ),
                       ),
                       const SizedBox(height: 24),
@@ -853,12 +967,10 @@ class _MyHomePageState extends State<MyHomePage> {
                       const SizedBox(height: 24),
                       ElevatedButton(
                         onPressed: () async {
-                          // Fermer le bottom sheet immédiatement
-                          Navigator.of(context).pop();
-
-                          // Préparer les données pour la création
+                          // Préparer les données AVANT de fermer le bottom sheet
                           final clientName = localNomController.text;
                           final mesures = <String, dynamic>{};
+
                           for (final input in localMeasureInputs) {
                             final value = input.controller.text.trim();
                             final numericValue = double.tryParse(value);
@@ -866,19 +978,15 @@ class _MyHomePageState extends State<MyHomePage> {
                               mesures[input.label] = numericValue;
                             }
                           }
+
                           final prix = double.tryParse(localPrixController.text);
                           final avance = double.tryParse(localAvanceController.text);
 
-                          // Disposer les contrôleurs locaux
-                          localNomController.dispose();
-                          localPrixController.dispose();
-                          localAvanceController.dispose();
-                          localResteController.dispose();
-                          for (var input in localMeasureInputs) {
-                            input.controller.dispose();
-                          }
+                          // Fermer le bottom sheet
+                          Navigator.of(context).pop();
 
-                          // Appeler la création avec les données préparées
+                          // NE PAS DISPOSER LES CONTRÔLEURS ICI
+                          // Appeler la création directement
                           await _createMeasurement(
                               clientName: clientName,
                               mesures: mesures,
