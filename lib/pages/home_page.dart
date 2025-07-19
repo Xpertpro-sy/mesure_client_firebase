@@ -25,6 +25,7 @@ class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _nomCompletController = TextEditingController();
   final TextEditingController _searchController = TextEditingController();
   final ValueNotifier<String> _searchNotifier = ValueNotifier('');
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   final List<String> _availableLabels = [
     'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
     'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'
@@ -37,7 +38,6 @@ class _MyHomePageState extends State<MyHomePage> {
   double? _avance;
 
   bool _isOnline = true;
-  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
   final _syncController = StreamController<void>();
   bool _isHiveInitialized = false;
   bool _isInitialSyncDone = false;
@@ -45,28 +45,6 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isSyncing = false;
   final Set<String> _syncedUuids = {};
   Box<Measurement>? _pendingBox;
-
-  // @override
-  // void initState() {
-  //   _resetForm();
-  //
-  //   // Initialiser Hive en premier
-  //   _initHive().then((_) {
-  //     _initConnectivity();
-  //     _setupOfflineListener();
-  //   });
-  //
-  //   _searchController.addListener(() {
-  //     _searchNotifier.value = _searchController.text;
-  //   });
-  //
-  //   // Initialisez Hive avant tout
-  //   WidgetsBinding.instance.addPostFrameCallback((_) async {
-  //     await _initHive();
-  //     _initConnectivity();
-  //     _setupOfflineListener();
-  //   });
-  // }
 
   @override
   void initState() {
@@ -118,18 +96,20 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _initConnectivity() async {
-    final connectivity = Connectivity();
-    final results = await connectivity.checkConnectivity();
+    final result = await Connectivity().checkConnectivity();
+    final online = result != ConnectivityResult.none;
+    if (mounted) setState(() => _isOnline = online);
 
-    setState(() {
-      _isOnline = results.any((result) => result != ConnectivityResult.none);
-    });
+    if (online) {
+      await _syncPendingMeasurements();
+    }
   }
+
 
   void _setupOfflineListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
-        .distinct() // Évite les doublons
+        .distinct()
         .listen((List<ConnectivityResult> results) {
       final newStatus = results.any((result) => result != ConnectivityResult.none);
 
@@ -141,12 +121,18 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _syncPendingMeasurements() async {
-    // 1. Vérifier les préconditions
-    if (!_isHiveInitialized || !_isOnline || _isSyncing || _pendingBox == null) {
+    // Vérifier l'authentification
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("Utilisateur non authentifié - Synchronisation annulée");
       return;
     }
+    // 1. Vérifier les préconditions
+    if (!_isHiveInitialized || !_isOnline || _isSyncing || _pendingBox == null || !mounted) {
+      return;
+    }
+    if (mounted) setState(() => _isSyncing = true);
 
-    setState(() => _isSyncing = true);
 
     try {
       final pendingKeys = _pendingBox?.keys.toList();
@@ -155,9 +141,9 @@ class _MyHomePageState extends State<MyHomePage> {
         final measurement = _pendingBox?.get(key);
         if (measurement == null) continue;
 
-        // 2. Vérifier si la mesure a déjà été synchronisée
-        if (_syncedUuids.contains(measurement.uuid)) {
-          await _pendingBox?.delete(key);
+        // ⚠️ Vérifier que la mesure appartient à l'utilisateur actuel
+        if (measurement.userId != user.uid) {
+          print("Mesure ${measurement.uuid} ignorée - Mauvais utilisateur");
           continue;
         }
 
@@ -184,7 +170,7 @@ class _MyHomePageState extends State<MyHomePage> {
     } catch (e) {
       print("Erreur générale de synchronisation: $e");
     } finally {
-      setState(() => _isSyncing = false);
+      if (mounted) setState(() => _isSyncing = false);
     }
   }
 
@@ -248,7 +234,7 @@ class _MyHomePageState extends State<MyHomePage> {
         measurements: mesures,
         price: prix,
         advance: avance,
-        userId: FirebaseAuth.instance.currentUser!.uid,
+        userId: FirebaseAuth.instance.currentUser!.uid, // ⚠️ Doit être présent
         status: _isOnline ? 'synced' : 'pending',
         syncedAt: _isOnline ? DateTime.now() : null,
         uuid: const Uuid().v4(),
@@ -1212,14 +1198,15 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   List<Measurement> _getPendingMeasurements() {
-    if (!_isHiveInitialized || _pendingBox == null) {
-      return [];
-    }
+    if (!_isHiveInitialized || _pendingBox == null) return [];
 
-    return _pendingBox!.keys.map((key) {
-      final measurement = _pendingBox!.get(key);
-      return measurement?.copyWith(id: 'pending_$key');
-    }).whereType<Measurement>().toList();
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) return [];
+
+    return _pendingBox!.values
+        .where((m) => m.userId == userId) // Filtre crucial
+        .map((m) => m.copyWith(id: 'pending_${m.uuid}'))
+        .toList();
   }
 
   Widget _buildClientItem(Measurement measurement, int index) {

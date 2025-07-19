@@ -16,6 +16,8 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+
+
   // Configuration du cache Firestore
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
