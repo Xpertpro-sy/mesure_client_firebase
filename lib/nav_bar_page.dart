@@ -4,6 +4,8 @@ import 'package:client_mesure_firebase/pages/personnalisation_page.dart';
 import 'package:client_mesure_firebase/pages/profil_page.dart';
 import 'package:flutter/material.dart';
 
+import 'common/color_extention.dart';
+
 
 class NavBarPage extends StatefulWidget {
   final int initialTabIndex;
@@ -44,7 +46,7 @@ class _NavBarPageState extends State<NavBarPage> {
       child: BottomNavigationBar(
         backgroundColor: Colors.white,
         currentIndex: _currentIndex,
-        selectedItemColor: Colors.blue,
+        selectedItemColor: TColor.principal1,
         unselectedItemColor: Colors.grey.shade600,
         type: BottomNavigationBarType.fixed,
         showSelectedLabels: false,

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 class TColor {
-  static Color get principal1 => const Color(0xFF11263A);
-  static Color get principal2 => const Color(0xFFFFFFFF);
+  static Color get principal1 => const Color(0xFF037585);
+  static Color get principal1Opacity => const Color(0x21037585);
+  static Color get principal2 => const Color(0xFF008111);
   static Color get seconde1 => const Color(0x2911263A);
   static Color get blanc => const Color(0xFFFFFFFF);
   static Color get noir => const Color(0xFF000000);

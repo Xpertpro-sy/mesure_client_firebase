@@ -76,8 +76,16 @@ class _PersonnalisationPageState extends State<PersonnalisationPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text("Mesures Personnalisées"),
+        backgroundColor: Colors.white,
+        title: const Text(
+          "Mesures Personnalisées",
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.save),

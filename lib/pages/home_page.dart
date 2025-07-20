@@ -9,6 +9,7 @@ import 'package:hive_flutter/adapters.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../common/color_extention.dart';
 import '../model/measurement_config.dart';
 import '../model/measurement_model.dart';
 
@@ -46,6 +47,8 @@ class _MyHomePageState extends State<MyHomePage> {
   bool _isSyncing = false;
   final Set<String> _syncedUuids = {};
   Box<Measurement>? _pendingBox;
+  bool _hadPendingMeasurements = false;
+
 
   @override
   void initState() {
@@ -157,7 +160,11 @@ class _MyHomePageState extends State<MyHomePage> {
 
     try {
       final keys = _pendingBox!.keys.toList();
-      print('🔎 ${keys.length} mesures en attente de synchronisation');
+      final int initialCount = keys.length;
+      int syncedCount = 0; // Compteur de mesures synchronisées
+
+      print('🔎 ${initialCount} mesures en attente de synchronisation');
+      _hadPendingMeasurements = initialCount > 0;
 
       for (final key in keys) {
         if (!mounted) {
@@ -238,6 +245,8 @@ class _MyHomePageState extends State<MyHomePage> {
               );
             }
           }
+          await _pendingBox!.delete(key);
+          syncedCount++;
         } catch (e) {
           print('❌ Erreur générale: $e');
 
@@ -252,15 +261,17 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
 
-      if (mounted) {
+      if (syncedCount > 0 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(_pendingBox!.isEmpty
-                  ? '✅ Toutes les données sont synchronisées!'
-                  : '⚠️ ${_pendingBox!.length} mesures restent à synchroniser'),
-              backgroundColor: _pendingBox!.isEmpty ? Colors.green : Colors.orange,
-              duration: const Duration(seconds: 3),
-            )
+          SnackBar(
+            content: _buildSyncedAnimation(syncedCount),
+            backgroundColor: TColor.principal2,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
         );
       }
     } finally {
@@ -449,18 +460,18 @@ class _MyHomePageState extends State<MyHomePage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Sélection des mesures',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF2D3748),
+                            color: TColor.principal1Opacity,
                           ),
                         ),
                         IconButton(
                           icon: Icon(
                             isUppercase ? Icons.text_fields : Icons.text_fields_outlined,
-                            color: const Color(0xFF63519F),
+                            color: TColor.principal1,
                           ),
                           onPressed: () => setState(() => isUppercase = !isUppercase),
                           tooltip: isUppercase ? 'Passer en minuscules' : 'Passer en majuscules',
@@ -473,22 +484,22 @@ class _MyHomePageState extends State<MyHomePage> {
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                       decoration: BoxDecoration(
-                        color: const Color(0x2463519E),
+                        color: TColor.principal1Opacity,
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: const Color(0xFF63519F),
+                          color: TColor.principal1,
                           width: 1,
                         ),
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.check_circle, color: Color(0xFF48BB78), size: 20),
+                          Icon(Icons.check_circle, color: TColor.principal2, size: 20),
                           const SizedBox(width: 8),
                           Text(
                             'Sélection: ${tempSelectedLabels.join(" + ")}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontWeight: FontWeight.w500,
-                              color: Color(0xFF2D3748),
+                              color: TColor.principal1Opacity,
                             ),
                           ),
                         ],
@@ -555,13 +566,13 @@ class _MyHomePageState extends State<MyHomePage> {
                               color: isSelected ? const Color(0xFFEBF8FF) : const Color(0xFFF7FAFC),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? const Color(0xFF63519F) : const Color(0x2463519E),
+                                color: isSelected ? TColor.principal1 : TColor.principal1Opacity,
                                 width: isSelected ? 2 : 1,
                               ),
                               boxShadow: isSelected
                                   ? [
                                 BoxShadow(
-                                  color: const Color(0x2463519E).withOpacity(0.2),
+                                  color: TColor.principal1.withOpacity(0.2),
                                   blurRadius: 6,
                                   offset: const Offset(0, 2),
                                 )
@@ -588,8 +599,8 @@ class _MyHomePageState extends State<MyHomePage> {
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                       color: isSelected
-                                          ? const Color(0xFF2B6CB0)
-                                          : const Color(0xFF4A5568),
+                                          ? TColor.principal1
+                                          : TColor.principal1Opacity,
                                     ),
                                   ),
                                 ),
@@ -607,7 +618,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       TextButton(
                         onPressed: () => Navigator.pop(context),
                         style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xFF718096),
+                          foregroundColor: TColor.principal1,
                         ),
                         child: const Row(
                           children: [
@@ -626,7 +637,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         }
                             : null,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF63519F),
+                          backgroundColor: TColor.principal1,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -701,14 +712,14 @@ class _MyHomePageState extends State<MyHomePage> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                             decoration: BoxDecoration(
-                              color: const Color(0x2463519E),
+                              color: TColor.principal1,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
                               input.label,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: Color(0xFF63519F),
+                                color: TColor.principal1,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -741,7 +752,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFF63519F), width: 2),
+                        borderSide: BorderSide(color: TColor.principal1, width: 2),
                       ),
                     ),
                   ),
@@ -872,7 +883,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                         }
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF4CAF50),
+                                        backgroundColor: TColor.principal2,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(10),
@@ -910,7 +921,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                         });
                                       },
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF63519F),
+                                        backgroundColor: TColor.principal1,
                                         foregroundColor: Colors.white,
                                         shape: RoundedRectangleBorder(
                                             borderRadius: BorderRadius.circular(10)),
@@ -956,10 +967,10 @@ class _MyHomePageState extends State<MyHomePage> {
                                   controller: localPrixController,
                                   keyboardType: TextInputType.number,
                                   textAlign: TextAlign.right,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF63519F),
+                                    color: TColor.principal1,
                                   ),
                                   decoration: const InputDecoration(
                                     border: InputBorder.none,
@@ -997,10 +1008,10 @@ class _MyHomePageState extends State<MyHomePage> {
                                   controller: localAvanceController,
                                   keyboardType: TextInputType.number,
                                   textAlign: TextAlign.right,
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
-                                    color: Color(0xFF63519F),
+                                    color: TColor.principal1,
                                   ),
                                   decoration: const InputDecoration(
                                     border: InputBorder.none,
@@ -1039,7 +1050,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                   fontWeight: FontWeight.w600,
                                   color: (double.tryParse(localResteController.text) ?? 0) > 0
                                       ? Colors.red
-                                      : Colors.green,
+                                      : TColor.principal2,
                                 ),
                               ),
                             ],
@@ -1077,7 +1088,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           );
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF63519F),
+                          backgroundColor: TColor.principal1,
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30)),
@@ -1169,10 +1180,10 @@ class _MyHomePageState extends State<MyHomePage> {
                               controller: _prixController,
                               keyboardType: TextInputType.number,
                               textAlign: TextAlign.right,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF63519F),
+                                color: TColor.principal1,
                               ),
                               decoration: const InputDecoration(
                                 border: InputBorder.none,
@@ -1209,10 +1220,10 @@ class _MyHomePageState extends State<MyHomePage> {
                               controller: _avanceController,
                               keyboardType: TextInputType.number,
                               textAlign: TextAlign.right,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF63519F),
+                                color: TColor.principal1,
                               ),
                               decoration: const InputDecoration(
                                 border: InputBorder.none,
@@ -1252,7 +1263,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                   0) >
                                   0
                                   ? Colors.red
-                                  : Colors.green,
+                                  : TColor.principal2,
                             ),
                           ),
                         ],
@@ -1268,7 +1279,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       Navigator.pop(context);
                     },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF63519F),
+                      backgroundColor: TColor.principal1,
                       minimumSize: const Size(double.infinity, 50),
                     ),
                     child: const Text('Valider',
@@ -1301,10 +1312,10 @@ class _MyHomePageState extends State<MyHomePage> {
       return RichText(
         text: TextSpan(
           text: text,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF2D3748),
+            color: TColor.principal1Opacity,
           ),
         ),
       );
@@ -1322,7 +1333,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (matchIndex == -1) {
         spans.add(TextSpan(
           text: text.substring(start),
-          style: const TextStyle(color: Color(0xFF2D3748)),
+          style: TextStyle(color: TColor.principal1Opacity),
         ));
         break;
       }
@@ -1330,7 +1341,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (matchIndex > start) {
         spans.add(TextSpan(
           text: text.substring(start, matchIndex),
-          style: const TextStyle(color: Color(0xFF2D3748)),
+          style: TextStyle(color: TColor.principal1Opacity),
         ));
       }
 
@@ -1340,8 +1351,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
       spans.add(TextSpan(
         text: matchedText,
-        style: const TextStyle(
-          color: Color(0xFF63519F),
+        style: TextStyle(
+          color: TColor.principal1,
           fontWeight: FontWeight.bold,
         ),
       ));
@@ -1397,6 +1408,53 @@ class _MyHomePageState extends State<MyHomePage> {
         .where((m) => m.userId == userId) // Filtre crucial
         .map((m) => m.copyWith(id: 'pending_${m.uuid}'))
         .toList();
+  }
+
+  Widget _buildSyncedAnimation(int count) {
+    return TweenAnimationBuilder(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 500),
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, 20 * (1 - value)),
+            child: Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Synchronisation réussie!',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        '$count ${count == 1 ? 'mesure' : 'mesures'} synchronisée(s)',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, size: 20),
+                  color: Colors.white,
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildClientItem(Measurement measurement, int index) {
@@ -1515,8 +1573,8 @@ class _MyHomePageState extends State<MyHomePage> {
                           child: Text(
                             value.toString(),
                             textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF2D3748),
+                            style: TextStyle(
+                              color: TColor.principal1Opacity,
                             ),
                           ),
                         ))
@@ -1531,15 +1589,15 @@ class _MyHomePageState extends State<MyHomePage> {
                       margin: const EdgeInsets.only(top: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0x2463519E),
+                        color: TColor.principal1Opacity,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '+${measurement.measurements.length - maxDisplayed} mesures',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF63519F),
+                          color: TColor.principal1,
                         ),
                       ),
                     ),
@@ -1640,7 +1698,7 @@ class _MyHomePageState extends State<MyHomePage> {
           const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: 'addBtn',
-            backgroundColor: const Color(0xFF63519F),
+            backgroundColor: TColor.principal1,
             onPressed: _showAddClientBottomSheet,
             child: const Icon(Icons.add, color: Colors.white, size: 28),
           ),
@@ -1808,6 +1866,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
   }
+
 }
 
 class MeasureInput {
