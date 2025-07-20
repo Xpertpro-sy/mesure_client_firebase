@@ -15,6 +15,8 @@ import '../model/measurement_model.dart';
 
 import 'package:rxdart/rxdart.dart';
 
+import 'MeasurementDetailPage.dart';
+
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key});
 
@@ -465,7 +467,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: TColor.principal1Opacity,
+                            color: TColor.noir,
                           ),
                         ),
                         IconButton(
@@ -499,7 +501,7 @@ class _MyHomePageState extends State<MyHomePage> {
                             'Sélection: ${tempSelectedLabels.join(" + ")}',
                             style: TextStyle(
                               fontWeight: FontWeight.w500,
-                              color: TColor.principal1Opacity,
+                              color: TColor.principal1,
                             ),
                           ),
                         ],
@@ -566,7 +568,7 @@ class _MyHomePageState extends State<MyHomePage> {
                               color: isSelected ? const Color(0xFFEBF8FF) : const Color(0xFFF7FAFC),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: isSelected ? TColor.principal1 : TColor.principal1Opacity,
+                                color: isSelected ? TColor.principal1 : TColor.principal1Label,
                                 width: isSelected ? 2 : 1,
                               ),
                               boxShadow: isSelected
@@ -600,7 +602,7 @@ class _MyHomePageState extends State<MyHomePage> {
                                       fontWeight: FontWeight.bold,
                                       color: isSelected
                                           ? TColor.principal1
-                                          : TColor.principal1Opacity,
+                                          : Colors.black38,
                                     ),
                                   ),
                                 ),
@@ -712,7 +714,7 @@ class _MyHomePageState extends State<MyHomePage> {
                           child: Container(
                             padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 8),
                             decoration: BoxDecoration(
-                              color: TColor.principal1,
+                              color: TColor.principal1Opacity,
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Text(
@@ -1315,7 +1317,7 @@ class _MyHomePageState extends State<MyHomePage> {
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.bold,
-            color: TColor.principal1Opacity,
+            color: TColor.principal1,
           ),
         ),
       );
@@ -1466,212 +1468,224 @@ class _MyHomePageState extends State<MyHomePage> {
     final maxDisplayed = 7;
     final hasExtraMeasures = measurement.measurements.length > maxDisplayed;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFFEAEAEA)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Stack(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (isPending)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber[100],
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.sync_disabled, size: 14, color: Colors.amber[800]),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Synchronisation en attente',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.amber[800],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          '#${index + 1}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[700],
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        _buildHighlightedText(
-                            measurement.clientName, _searchController.text),
-                      ],
-                    ),
-                    Text(
-                      formattedDate,
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MeasurementDetailPage(
+              measurement: measurement,
+            ),
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFEAEAEA)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (isPending)
+                    Container(
+                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.amber[100],
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                if (measurement.measurements.isNotEmpty)
-                  Table(
-                    columnWidths: const {
-                      0: FlexColumnWidth(1.0),
-                      1: FlexColumnWidth(1.0),
-                      2: FlexColumnWidth(1.0),
-                      3: FlexColumnWidth(1.0),
-                      4: FlexColumnWidth(1.0),
-                      5: FlexColumnWidth(1.0),
-                      6: FlexColumnWidth(1.0),
-                    },
-                    children: [
-                      TableRow(
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9F9F9),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        children: measureKeys
-                            .take(maxDisplayed)
-                            .map((label) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 10, horizontal: 4),
-                          child: Text(
-                            label,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF4A5568),
-                            ),
-                          ),
-                        ))
-                            .toList(),
-                      ),
-                      TableRow(
-                        children: measureValues
-                            .take(maxDisplayed)
-                            .map((value) => Padding(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 10, horizontal: 4),
-                          child: Text(
-                            value.toString(),
-                            textAlign: TextAlign.center,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.sync_disabled, size: 14, color: Colors.amber[800]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Synchronisation en attente',
                             style: TextStyle(
-                              color: TColor.principal1Opacity,
+                              fontSize: 12,
+                              color: Colors.amber[800],
                             ),
                           ),
-                        ))
-                            .toList(),
+                        ],
+                      ),
+                    ),
+      
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '#${index + 1}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[700],
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _buildHighlightedText(
+                              measurement.clientName, _searchController.text),
+                        ],
+                      ),
+                      Text(
+                        formattedDate,
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
-                if (hasExtraMeasures)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: TColor.principal1Opacity,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        '+${measurement.measurements.length - maxDisplayed} mesures',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: TColor.principal1,
-                        ),
-                      ),
-                    ),
-                  ),
-                // const SizedBox(height: 4),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    GestureDetector(
-                      onTap: () => _showMontantBottomSheet(measurement),
-                      child: Text(
-                        measurement.price != null
-                            ? 'Montant: ${measurement.price} (Avance: ${measurement.advance ?? 0})'
-                            : 'Ajouter montant',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (_isDeleting && _deletingId == measurement.id)
-                      const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    else
-                      IconButton(
-                        icon: const Icon(Icons.delete_forever, size: 22),
-                        color: Colors.red[400],
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('Confirmer la suppression'),
-                              content: Text(
-                                  'Voulez-vous vraiment supprimer "${measurement.clientName}" ?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('Annuler'),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                    _deleteMeasurement(measurement.id!);
-                                  },
-                                  child: const Text('Supprimer',
-                                      style: TextStyle(color: Colors.red)),
-                                ),
-                              ],
+                  const SizedBox(height: 4),
+                  if (measurement.measurements.isNotEmpty)
+                    Table(
+                      columnWidths: const {
+                        0: FlexColumnWidth(1.0),
+                        1: FlexColumnWidth(1.0),
+                        2: FlexColumnWidth(1.0),
+                        3: FlexColumnWidth(1.0),
+                        4: FlexColumnWidth(1.0),
+                        5: FlexColumnWidth(1.0),
+                        6: FlexColumnWidth(1.0),
+                      },
+                      children: [
+                        TableRow(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9F9F9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          children: measureKeys
+                              .take(maxDisplayed)
+                              .map((label) => Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10, horizontal: 4),
+                            child: Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF4A5568),
+                              ),
                             ),
-                          );
-                        },
+                          ))
+                              .toList(),
+                        ),
+                        TableRow(
+                          children: measureValues
+                              .take(maxDisplayed)
+                              .map((value) => Padding(
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10, horizontal: 4),
+                            child: Text(
+                              value.toString(),
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: TColor.principal1TableRow,
+                              ),
+                            ),
+                          ))
+                              .toList(),
+                        ),
+                      ],
+                    ),
+                  if (hasExtraMeasures)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: TColor.principal1Opacity,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '+${measurement.measurements.length - maxDisplayed} mesures',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: TColor.principal1,
+                          ),
+                        ),
                       ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (isPending)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: const BoxDecoration(
-                  color: Colors.amber,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.warning, size: 16, color: Colors.white),
+                    ),
+                  // const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      GestureDetector(
+                        onTap: () => _showMontantBottomSheet(measurement),
+                        child: Text(
+                          measurement.price != null
+                              ? 'Montant: ${measurement.price} (Avance: ${measurement.advance ?? 0})'
+                              : 'Ajouter montant',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      if (_isDeleting && _deletingId == measurement.id)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(Icons.delete_forever, size: 22),
+                          color: Colors.red[400],
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Confirmer la suppression'),
+                                content: Text(
+                                    'Voulez-vous vraiment supprimer "${measurement.clientName}" ?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context),
+                                    child: const Text('Annuler'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      _deleteMeasurement(measurement.id!);
+                                    },
+                                    child: const Text('Supprimer',
+                                        style: TextStyle(color: Colors.red)),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
-        ],
+            if (isPending)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: Colors.amber,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.warning, size: 16, color: Colors.white),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
