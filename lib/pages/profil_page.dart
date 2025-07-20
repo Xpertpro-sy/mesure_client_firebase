@@ -25,6 +25,139 @@ class _ProfilPageState extends State<ProfilPage> {
   final User? user = Auth().currentUser;
   final double profileHeight = 144;
 
+  // Fonction pour afficher le pop-up de déconnexion
+  void _showLogoutConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 12,
+                  spreadRadius: 2,
+                )
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Icône d'avertissement
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.logout,
+                    size: 40,
+                    color: Colors.red.shade700,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Titre
+                const Text(
+                  "Déconnexion",
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // Message
+                const Text(
+                  "Êtes-vous sûr de vouloir vous déconnecter ?",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey,
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Boutons
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    // Bouton Annuler
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          side: BorderSide(
+                            color: Colors.grey.shade300,
+                            width: 1,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: const Text(
+                          "Annuler",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.black87,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(width: 16),
+
+                    // Bouton Déconnexion
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Navigator.pop(context); // Fermer le pop-up
+                          Auth().logout(); // Déconnexion
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          "Déconnecter",
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<MenuItem> menuItems = [
@@ -33,11 +166,6 @@ class _ProfilPageState extends State<ProfilPage> {
         icon: Icons.edit_outlined,
         color: Colors.blue.shade700,
       ),
-      // MenuItem(
-      //   title: 'Paramètres',
-      //   icon: Icons.settings_outlined,
-      //   color: Colors.grey.shade700,
-      // ),
       MenuItem(
         title: 'Conditions d\'utilisation',
         icon: Icons.description_outlined,
@@ -65,20 +193,18 @@ class _ProfilPageState extends State<ProfilPage> {
         headerSliverBuilder: (context, innerBoxIsScrolled) {
           return [
             SliverAppBar(
-              // expandedHeight: 220,
               floating: false,
               pinned: true,
               flexibleSpace: FlexibleSpaceBar(
                 background: Container(
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.white,
                           Colors.white,
-                        ]
-                    ),
+                        ]),
                   ),
                 ),
                 title: const Text(
@@ -86,8 +212,7 @@ class _ProfilPageState extends State<ProfilPage> {
                   style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
-                      color: Colors.black
-                  ),
+                      color: Colors.black),
                 ),
                 centerTitle: true,
               ),
@@ -98,11 +223,7 @@ class _ProfilPageState extends State<ProfilPage> {
           child: Column(
             children: [
               const SizedBox(height: 16),
-
-              // Carte de profil
               _buildProfileCard(),
-
-              // Section menu
               _buildMenuSection(menuItems),
             ],
           ),
@@ -133,7 +254,6 @@ class _ProfilPageState extends State<ProfilPage> {
             clipBehavior: Clip.none,
             alignment: Alignment.center,
             children: [
-              // Cercle d'arrière-plan avec dégradé
               Container(
                 height: profileHeight + 8,
                 width: profileHeight + 8,
@@ -149,8 +269,6 @@ class _ProfilPageState extends State<ProfilPage> {
                   ),
                 ),
               ),
-
-              // Image de profil
               Positioned(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(100),
@@ -164,10 +282,7 @@ class _ProfilPageState extends State<ProfilPage> {
               ),
             ],
           ),
-
           const SizedBox(height: 24),
-
-          // Nom d'utilisateur
           const Text(
             'SY Diakaridia',
             style: TextStyle(
@@ -176,10 +291,7 @@ class _ProfilPageState extends State<ProfilPage> {
               color: Colors.black87,
             ),
           ),
-
           const SizedBox(height: 8),
-
-          // Identifiant
           Text(
             user?.email ?? 'User email',
             style: TextStyle(
@@ -187,16 +299,11 @@ class _ProfilPageState extends State<ProfilPage> {
               color: Colors.grey.shade600,
             ),
           ),
-
           const SizedBox(height: 16),
-
-          // Statistiques
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _buildStatItem('128', 'Clients'),
-              // _buildDivider(),
-              // _buildStatItem('2.4K', 'Abonnés'),
               _buildDivider(),
               _buildStatItem('31 Jours', 'Abonnements'),
             ],
@@ -256,8 +363,7 @@ class _ProfilPageState extends State<ProfilPage> {
                 ),
                 onTap: () {
                   if (menuItems[index].title == 'Déconnexion') {
-                    // Logique de déconnexion
-                    Auth().logout();
+                    _showLogoutConfirmation(context);
                   }
                 },
               ),
