@@ -99,98 +99,177 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _initConnectivity() async {
     final result = await Connectivity().checkConnectivity();
     final online = result != ConnectivityResult.none;
+
     if (mounted) setState(() => _isOnline = online);
 
-    if (online) {
+    // Ajouter ceci pour déclencher la sync immédiatement
+    if (online && _isHiveInitialized) {
       await _syncPendingMeasurements();
     }
   }
 
-
   void _setupOfflineListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
-        .distinct()
         .listen((List<ConnectivityResult> results) {
-      final newStatus = results.any((result) => result != ConnectivityResult.none);
+      final newStatus = results.any(
+              (result) => result != ConnectivityResult.none
+      );
 
       if (newStatus != _isOnline) {
         setState(() => _isOnline = newStatus);
-        if (newStatus) _syncPendingMeasurements();
+        if (newStatus) {
+          // Ajouter un délai pour laisser la connexion s'établir
+          Future.delayed(const Duration(seconds: 2), () {
+            _syncPendingMeasurements();
+          });
+        }
       }
     });
   }
 
   Future<void> _syncPendingMeasurements() async {
-    // Vérifier l'authentification
     final user = FirebaseAuth.instance.currentUser;
+
+    // Vérification des pré-conditions essentielles
     if (user == null) {
-      print("Utilisateur non authentifié - Synchronisation annulée");
+      print('🔴 Sync impossible: Aucun utilisateur connecté');
       return;
     }
-    // 1. Vérifier les préconditions
-    if (!_isHiveInitialized || !_isOnline || _isSyncing || _pendingBox == null || !mounted) {
+
+    if (!_isHiveInitialized || _pendingBox == null) {
+      print('🔴 Sync impossible: Hive non initialisé');
       return;
     }
+
+    if (!_isOnline) {
+      print('🔴 Sync impossible: Hors ligne');
+      return;
+    }
+
+    if (_isSyncing) {
+      print('🔄 Sync déjà en cours');
+      return;
+    }
+
+    // Début de la synchronisation
     if (mounted) setState(() => _isSyncing = true);
 
-
     try {
-      final pendingKeys = _pendingBox?.keys.toList();
+      final keys = _pendingBox!.keys.toList();
+      print('🔎 ${keys.length} mesures en attente de synchronisation');
 
-      for (final key in pendingKeys!) {
-        final measurement = _pendingBox?.get(key);
-        if (measurement == null) continue;
+      for (final key in keys) {
+        if (!mounted) {
+          print('⚠️ Synchronisation interrompue: Widget démonté');
+          return;
+        }
 
-        // ⚠️ Vérifier que la mesure appartient à l'utilisateur actuel
+        final measurement = _pendingBox!.get(key);
+
+        if (measurement == null) {
+          print('🗑️ Suppression clé $key: Mesure null');
+          await _pendingBox!.delete(key);
+          continue;
+        }
+
         if (measurement.userId != user.uid) {
-          print("Mesure ${measurement.uuid} ignorée - Mauvais utilisateur");
+          print('👥 Suppression mesure ${measurement.uuid}: Mauvais utilisateur');
+          await _pendingBox!.delete(key);
           continue;
         }
 
         try {
-          // 3. Vérifier l'existence dans Firestore
-          final query = await _firestore
-              .collection('measurements')
-              .where('uuid', isEqualTo: measurement.uuid)
-              .limit(1)
-              .get();
-
-          // 4. Synchroniser seulement si elle n'existe pas
-          if (query.docs.isEmpty) {
-            await _firestore.collection('measurements').add(measurement.toFirestore());
+          if (measurement.userId.isEmpty) {
+            print('❌ Mesure ${measurement.uuid} invalide: userID manquant');
+            await _pendingBox!.delete(key);
+            continue;
           }
 
-          // 5. Mettre à jour les caches
-          _syncedUuids.add(measurement.uuid);
-          await _pendingBox?.delete(key);
+          // Vérifier que l'UUID est valide
+          if (measurement.uuid.isEmpty || !RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$').hasMatch(measurement.uuid)) {
+            print('❌ UUID invalide: ${measurement.uuid}');
+            await _pendingBox!.delete(key);
+            continue;
+          }
+
+          final docRef = _firestore.collection('measurements').doc(measurement.uuid);
+
+          // Utilisation de set() avec merge désactivé pour simuler create()
+          await docRef.set(measurement.toFirestore(), SetOptions(merge: false));
+
+          print('✅ Synchronisation réussie pour ${measurement.uuid}');
+          await _pendingBox!.delete(key);
+
+        } on FirebaseException catch (e) {
+          if (e.code == 'permission-denied') {
+            print('🔒 Erreur permission pour ${measurement.uuid}: ${e.message}');
+
+            // Ajouter un délai avant la notification
+            await Future.delayed(const Duration(milliseconds: 100));
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Permission refusée pour ${measurement.clientName}'),
+                    backgroundColor: Colors.red,
+                    duration: const Duration(seconds: 5),
+                  )
+              );
+            }
+          }
+          else if (e.code == 'already-exists') {
+            print('⚠️ Document ${measurement.uuid} existe déjà');
+            await _pendingBox!.delete(key);
+          }
+          else if (e.code == 'invalid-argument') {
+            print('❌ Données invalides pour ${measurement.uuid}: ${e.message}');
+            await _pendingBox!.delete(key);
+          }
+          else {
+            print('🔥 Erreur Firebase [${e.code}]: ${e.message}');
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Erreur ${e.code}: ${e.message}'),
+                    backgroundColor: Colors.orange,
+                  )
+              );
+            }
+          }
         } catch (e) {
-          print("Erreur de synchronisation pour ${measurement.uuid}: $e");
+          print('❌ Erreur générale: $e');
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Erreur inattendue: ${e.toString()}'),
+                  backgroundColor: Colors.deepOrange,
+                )
+            );
+          }
         }
       }
-    } catch (e) {
-      print("Erreur générale de synchronisation: $e");
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_pendingBox!.isEmpty
+                  ? '✅ Toutes les données sont synchronisées!'
+                  : '⚠️ ${_pendingBox!.length} mesures restent à synchroniser'),
+              backgroundColor: _pendingBox!.isEmpty ? Colors.green : Colors.orange,
+              duration: const Duration(seconds: 3),
+            )
+        );
+      }
     } finally {
-      if (mounted) setState(() => _isSyncing = false);
+      if (mounted) {
+        setState(() => _isSyncing = false);
+      }
+      print('🛑 Synchronisation terminée');
     }
   }
-
-  // void _resetForm() {
-  //   _nomCompletController.clear();
-  //
-  //   for (var input in _currentMeasureInputs) {
-  //     input.controller.dispose(); // Dispose ici
-  //   }
-  //
-  //   _currentMeasureInputs = [
-  //   MeasureInput(
-  //   label: 'T',
-  //   controller: TextEditingController(text: '0'),
-  //   ),
-  //   ];
-  //   _prix = null;
-  //   _avance = null;
-  // }
 
   void _resetForm() {
     _nomCompletController.clear();
@@ -263,14 +342,17 @@ class _MyHomePageState extends State<MyHomePage> {
         measurements: mesures,
         price: prix,
         advance: avance,
-        userId: FirebaseAuth.instance.currentUser!.uid, // ⚠️ Doit être présent
+        userId: FirebaseAuth.instance.currentUser!.uid,
         status: _isOnline ? 'synced' : 'pending',
         syncedAt: _isOnline ? DateTime.now() : null,
         uuid: const Uuid().v4(),
       );
 
       if (_isOnline) {
-        await _firestore.collection('measurements').add(newMeasurement.toFirestore());
+        await _firestore
+            .collection('measurements')
+            .doc(newMeasurement.uuid) // Utiliser UUID comme ID
+            .set(newMeasurement.toFirestore());
       } else {
         await _pendingBox?.add(newMeasurement);
       }
@@ -1540,10 +1622,29 @@ class _MyHomePageState extends State<MyHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: const Color(0xFF63519F),
-        onPressed: _showAddClientBottomSheet,
-        child: const Icon(Icons.add, color: Colors.white, size: 28),
+      // floatingActionButton: FloatingActionButton(
+      //   backgroundColor: const Color(0xFF63519F),
+      //   onPressed: _showAddClientBottomSheet,
+      //   child: const Icon(Icons.add, color: Colors.white, size: 28),
+      // ),
+      floatingActionButton: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (!_isOnline && _pendingBox!.isNotEmpty)
+            FloatingActionButton(
+              heroTag: 'syncBtn',
+              backgroundColor: Colors.orange,
+              onPressed: _syncPendingMeasurements,
+              child: const Icon(Icons.sync),
+            ),
+          const SizedBox(height: 16),
+          FloatingActionButton(
+            heroTag: 'addBtn',
+            backgroundColor: const Color(0xFF63519F),
+            onPressed: _showAddClientBottomSheet,
+            child: const Icon(Icons.add, color: Colors.white, size: 28),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Padding(
