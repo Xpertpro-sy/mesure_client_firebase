@@ -58,11 +58,11 @@ class _PersonnalisationPageState extends State<PersonnalisationPage> {
       if (_configBox.containsKey(_currentUser!.uid)) {
         final config = _configBox.get(_currentUser!.uid)!;
         _configNotifier.value = config;
-        setState(() => _isLoading = false);
-      } else {
-        setState(() => _isLoading = false);
       }
 
+      setState(() => _isLoading = false); // Déplacez ici
+
+      // Appeler la synchronisation après le chargement initial
       if (_isOnline) {
         _syncWithFirestore();
       }
@@ -77,14 +77,14 @@ class _PersonnalisationPageState extends State<PersonnalisationPage> {
 
   void _initConnectivity() async {
     final result = await Connectivity().checkConnectivity();
-    setState(() => _isOnline = result.any((r) => r != ConnectivityResult.none));
+    if (mounted) setState(() => _isOnline = result.any((r) => r != ConnectivityResult.none));
 
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
       final newStatus = results.any((r) => r != ConnectivityResult.none);
 
-      if (newStatus != _isOnline) {
+      if (newStatus != _isOnline && mounted) {
         setState(() => _isOnline = newStatus);
         if (newStatus) {
           _syncWithFirestore();
