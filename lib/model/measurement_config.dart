@@ -20,7 +20,6 @@ class MeasurementConfig {
     required this.updatedAt,
   });
 
-  // Méthode copyWith ajoutée ici
   MeasurementConfig copyWith({
     String? userId,
     List<CustomMeasurement>? measurements,
@@ -67,11 +66,16 @@ class CustomMeasurement {
   @HiveField(3)
   final String? defaultValue;
 
+  // Ajout du champ updatedAt
+  @HiveField(4)
+  final DateTime updatedAt;
+
   CustomMeasurement({
     required this.id,
     required this.name,
     this.unit = "cm",
     this.defaultValue,
+    required this.updatedAt,
   });
 
   factory CustomMeasurement.fromMap(Map<String, dynamic> map) {
@@ -80,6 +84,9 @@ class CustomMeasurement {
       name: map['name'],
       unit: map['unit'] ?? "cm",
       defaultValue: map['defaultValue'],
+      updatedAt: map['updatedAt'] != null
+          ? (map['updatedAt'] as Timestamp).toDate()
+          : DateTime.now(),
     );
   }
 
@@ -89,21 +96,23 @@ class CustomMeasurement {
       'name': name,
       'unit': unit,
       'defaultValue': defaultValue,
+      'updatedAt': Timestamp.fromDate(updatedAt),
     };
   }
 
-  // Optionnel: Ajoutez aussi copyWith pour CustomMeasurement si besoin
   CustomMeasurement copyWith({
     String? id,
     String? name,
     String? unit,
     String? defaultValue,
+    DateTime? updatedAt,
   }) {
     return CustomMeasurement(
       id: id ?? this.id,
       name: name ?? this.name,
       unit: unit ?? this.unit,
       defaultValue: defaultValue ?? this.defaultValue,
+      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 }

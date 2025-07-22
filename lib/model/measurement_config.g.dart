@@ -61,13 +61,14 @@ class CustomMeasurementAdapter extends TypeAdapter<CustomMeasurement> {
       name: fields[1] as String,
       unit: fields[2] as String,
       defaultValue: fields[3] as String?,
+      updatedAt: fields[4] as DateTime,
     );
   }
 
   @override
   void write(BinaryWriter writer, CustomMeasurement obj) {
     writer
-      ..writeByte(4)
+      ..writeByte(5)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -75,7 +76,9 @@ class CustomMeasurementAdapter extends TypeAdapter<CustomMeasurement> {
       ..writeByte(2)
       ..write(obj.unit)
       ..writeByte(3)
-      ..write(obj.defaultValue);
+      ..write(obj.defaultValue)
+      ..writeByte(4)
+      ..write(obj.updatedAt);
   }
 
   @override
