@@ -190,13 +190,13 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
               BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(top: 8),
-                  child: Icon(Icons.receipt_long_outlined),
+                  child: Icon(Icons.dashboard_customize_outlined),
                 ),
                 activeIcon: Padding(
                   padding: EdgeInsets.only(top: 8),
-                  child: Icon(Icons.receipt_long),
+                  child: Icon(Icons.dashboard_customize),
                 ),
-                label: 'Facture',
+                label: 'Modèle',
               ),
             ],
           ),
@@ -531,7 +531,7 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
     // Implémentation de l'écran de facture
     return Center(
       child: Text(
-        'Écran de facture pour ${_currentMeasurement.clientName}',
+        'Modèle pour le client ${_currentMeasurement.clientName}',
         style: const TextStyle(fontSize: 18),
       ),
     );
