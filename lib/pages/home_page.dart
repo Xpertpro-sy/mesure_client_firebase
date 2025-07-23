@@ -203,18 +203,30 @@ class _MyHomePageState extends State<MyHomePage> {
           }
 
           final docRef = _firestore.collection('measurements').doc(measurement.uuid);
+          final data = measurement.toFirestore();
 
-          // Utilisation de set() avec merge désactivé pour simuler create()
-          await docRef.set(measurement.toFirestore(), SetOptions(merge: false));
+          try {
+            // Nouveau: Essayer de créer le document
+            await docRef.set(data, SetOptions(merge: false));
+            print('✅ Création réussie pour ${measurement.uuid}');
+          } on FirebaseException catch (e) {
+            if (e.code == 'already-exists') {
+              // Document existe déjà: Mise à jour
+              await docRef.update(data);
+              print('✅ Mise à jour réussie pour ${measurement.uuid}');
+            } else {
+              rethrow; // Propager les autres erreurs
+            }
+          }
 
-          print('✅ Synchronisation réussie pour ${measurement.uuid}');
           await _pendingBox!.delete(key);
+          syncedCount++;
+          print('🗑️ Mesure ${measurement.uuid} supprimée du stockage local');
 
         } on FirebaseException catch (e) {
+          // Gestion des erreurs Firebase
           if (e.code == 'permission-denied') {
             print('🔒 Erreur permission pour ${measurement.uuid}: ${e.message}');
-
-            // Ajouter un délai avant la notification
             await Future.delayed(const Duration(milliseconds: 100));
 
             if (mounted) {
@@ -227,17 +239,11 @@ class _MyHomePageState extends State<MyHomePage> {
               );
             }
           }
-          else if (e.code == 'already-exists') {
-            print('⚠️ Document ${measurement.uuid} existe déjà');
-            await _pendingBox!.delete(key);
-          }
           else if (e.code == 'invalid-argument') {
             print('❌ Données invalides pour ${measurement.uuid}: ${e.message}');
-            await _pendingBox!.delete(key);
           }
           else {
             print('🔥 Erreur Firebase [${e.code}]: ${e.message}');
-
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
@@ -247,11 +253,11 @@ class _MyHomePageState extends State<MyHomePage> {
               );
             }
           }
-          await _pendingBox!.delete(key);
-          syncedCount++;
+
+          // Conserver la mesure dans Hive pour une prochaine tentative
+          print('📦 Conservation de ${measurement.uuid} pour re-synchronisation');
         } catch (e) {
           print('❌ Erreur générale: $e');
-
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -260,6 +266,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 )
             );
           }
+          // Conserver la mesure dans Hive
+          print('📦 Conservation de ${measurement.uuid} pour re-synchronisation');
         }
       }
 

@@ -1,4 +1,9 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import '../common/color_extention.dart';
 import '../model/measurement_model.dart';
@@ -15,11 +20,116 @@ class MeasurementDetailPage extends StatefulWidget {
 class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
   int _currentIndex = 0;
   late Measurement _currentMeasurement;
+  bool _isOnline = true;
+  late StreamSubscription<List<ConnectivityResult>> _connectivitySubscription;
+  Box<Measurement>? _pendingBox;
 
   @override
   void initState() {
     super.initState();
     _currentMeasurement = widget.measurement;
+    _initConnectivity();
+    _initHive();
+  }
+
+  Future<void> _initHive() async {
+    try {
+      _pendingBox = await Hive.openBox<Measurement>('pending_measurements');
+    } catch (e) {
+      print("Erreur d'initialisation Hive: $e");
+    }
+  }
+
+  Future<void> _initConnectivity() async {
+    final result = await Connectivity().checkConnectivity();
+    setState(() => _isOnline = result != ConnectivityResult.none);
+
+    _connectivitySubscription = Connectivity()
+        .onConnectivityChanged
+        .listen((List<ConnectivityResult> results) {
+      setState(() {
+        _isOnline = results.any(
+              (result) => result != ConnectivityResult.none,
+        );
+      });
+    });
+  }
+
+  Future<void> _saveOrUpdateInPendingBox(Measurement measurement) async {
+    if (_pendingBox == null) return;
+
+    final existingKeys = _pendingBox!.keys.toList();
+    int? existingKey;
+
+    for (final key in existingKeys) {
+      final m = _pendingBox!.get(key);
+      if (m != null && m.uuid == measurement.uuid) {
+        existingKey = key;
+        break;
+      }
+    }
+
+    if (existingKey != null) {
+      await _pendingBox!.put(existingKey, measurement);
+    } else {
+      await _pendingBox!.add(measurement);
+    }
+  }
+
+  Future<void> _updateMeasurementInFirestore(Measurement measurement) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('measurements')
+          .doc(measurement.uuid)
+          .update(measurement.toFirestore());
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mesure mise à jour avec succès!')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur de mise à jour: $e')),
+      );
+    }
+  }
+
+  void _saveChanges(String newName, Map<String, String> updatedMeasures) {
+    final newMeasures = <String, dynamic>{};
+    updatedMeasures.forEach((key, value) {
+      newMeasures[key] = double.tryParse(value) ?? 0.0;
+    });
+
+    final updatedMeasurement = _currentMeasurement.copyWith(
+      clientName: newName,
+      measurements: newMeasures,
+    );
+
+    setState(() => _currentMeasurement = updatedMeasurement);
+
+    if (_currentMeasurement.status == 'synced') {
+      if (_isOnline) {
+        _updateMeasurementInFirestore(updatedMeasurement);
+      } else {
+        _saveOrUpdateInPendingBox(updatedMeasurement.copyWith(status: 'pending'));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Modifications enregistrées localement. Synchronisation à venir.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } else if (_currentMeasurement.status == 'pending') {
+      _saveOrUpdateInPendingBox(updatedMeasurement);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Mesure mise à jour dans les modifications en attente')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
   }
 
   @override
@@ -445,17 +555,8 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
           nameController: nameController,
           measureControllers: measureControllers,
           onSave: (newName, updatedMeasures) {
-            final newMeasures = <String, dynamic>{};
-            for (var entry in updatedMeasures.entries) {
-              newMeasures[entry.key] = double.tryParse(entry.value) ?? 0.0;
-            }
-
-            setState(() {
-              _currentMeasurement = _currentMeasurement.copyWith(
-                clientName: newName,
-                measurements: newMeasures,
-              );
-            });
+            _saveChanges(newName, updatedMeasures);
+            Navigator.pop(context);
           },
         );
       },
