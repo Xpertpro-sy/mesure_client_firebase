@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 import '../common/color_extention.dart';
+import '../model/build-model-screen.dart';
 import '../model/measurement_model.dart';
 
 class MeasurementDetailPage extends StatefulWidget {
@@ -528,13 +529,14 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
   }
 
   Widget _buildInvoiceScreen() {
-    // Implémentation de l'écran de facture
-    return Center(
-      child: Text(
-        'Modèle pour le client ${_currentMeasurement.clientName}',
-        style: const TextStyle(fontSize: 18),
-      ),
-    );
+    // Implémentation le model
+    return BuildModelScreen();
+    // return Center(
+    //   child: Text(
+    //     'Modèle pour le client ${_currentMeasurement.clientName}',
+    //     style: const TextStyle(fontSize: 18),
+    //   ),
+    // );
   }
 
   void _showEditDialog(BuildContext context) {
