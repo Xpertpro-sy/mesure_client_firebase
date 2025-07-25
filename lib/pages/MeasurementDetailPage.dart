@@ -236,25 +236,23 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
   }
 
   Widget _buildStatusIndicator() {
-    if (_currentMeasurement.status == 'pending') {
+    if (_currentMeasurement.isSyncing) {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
         decoration: BoxDecoration(
-          color: Colors.amber[100],
+          color: Colors.blue[100],
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.amber),
+          border: Border.all(color: Colors.blue),
         ),
         child: Row(
           children: [
-            Icon(Icons.sync_problem, color: Colors.amber[800]),
+            const CircularProgressIndicator(),
             const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'En attente de synchronisation',
-                style: TextStyle(
-                  color: Colors.amber[800],
-                  fontWeight: FontWeight.w500,
-                ),
+            Text(
+              'Synchronisation en cours...',
+              style: TextStyle(
+                color: Colors.blue[800],
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -308,7 +306,13 @@ class _MeasurementDetailPageState extends State<MeasurementDetailPage> {
             const SizedBox(height: 16),
             _buildInfoRow('Date d\'enregistrement', formattedDate, Icons.calendar_today),
             const SizedBox(height: 16),
-            _buildInfoRow('Statut', _currentMeasurement.status == 'synced' ? 'Synchronisé' : 'En attente', Icons.sync),
+            // _buildInfoRow('Statut', _currentMeasurement.status == 'synced' ? 'Synchronisé' : 'En attente', Icons.sync),
+            _buildInfoRow('Statut',
+                _currentMeasurement.status == 'synced'
+                    ? 'Synchronisé'
+                    : (_currentMeasurement.isSyncing ? 'Synchronisation en cours...' : 'En attente'),
+                Icons.sync
+            ),
           ],
         ),
       ),

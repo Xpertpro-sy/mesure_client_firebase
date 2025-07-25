@@ -50,6 +50,12 @@ class Measurement {
   @HiveField(13)
   final String? configId;
 
+  @HiveField(14, defaultValue: false)
+  final bool isSyncing;
+
+  @HiveField(15, defaultValue: false)
+  final bool isSynced;
+
   Measurement({
     this.id,
     required this.clientName,
@@ -65,6 +71,8 @@ class Measurement {
     this.syncedAt,
     required this.uuid,
     this.configId,
+    this.isSyncing = false,
+    this.isSynced = false,
   });
 
   static String _generateSyncHash() {
@@ -95,12 +103,14 @@ class Measurement {
       price: parseDouble(data['price']),
       advance: parseDouble(data['advance']),
       userId: data['userId'] as String? ?? "",
-      status: data['status'] as String? ?? 'synced',
+      status: data['status'] as String? ?? 'synced', // Cast explicite
       syncedAt: data['syncedAt'] != null
           ? (data['syncedAt'] as Timestamp).toDate()
           : null,
       uuid: data['uuid'] as String? ?? const Uuid().v4(),
       configId: data['configId'] as String? ?? "",
+      isSyncing: false,
+      isSynced: false,
     );
   }
 
@@ -139,6 +149,8 @@ class Measurement {
     DateTime? syncedAt,
     String? uuid,
     String? configId,
+    bool? isSyncing,
+    bool? isSynced,
   }) {
     return Measurement(
       id: id ?? this.id,
@@ -155,6 +167,8 @@ class Measurement {
       syncedAt: syncedAt ?? this.syncedAt,
       uuid: uuid ?? this.uuid,
       configId: configId ?? this.configId,
+      isSyncing: isSyncing ?? this.isSyncing,
+      isSynced: isSynced ?? this.isSynced,
     );
   }
 }

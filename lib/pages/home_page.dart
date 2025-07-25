@@ -195,6 +195,9 @@ class _MyHomePageState extends State<MyHomePage> {
             continue;
           }
 
+          await _pendingBox!.delete(key); // <-- Ajout crucial
+          print('🗑️ Suppression locale après synchro: ${measurement.uuid}');
+
           // Vérifier que l'UUID est valide
           if (measurement.uuid.isEmpty || !RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$').hasMatch(measurement.uuid)) {
             print('❌ UUID invalide: ${measurement.uuid}');
@@ -202,26 +205,32 @@ class _MyHomePageState extends State<MyHomePage> {
             continue;
           }
 
-          final docRef = _firestore.collection('measurements').doc(measurement.uuid);
-          final data = measurement.toFirestore();
+          // Créer une nouvelle mesure avec le statut mis à jour
+          final syncedMeasurement = measurement.copyWith(
+            status: 'synced',
+            syncedAt: DateTime.now(),
+          );
+
+          final docRef = _firestore.collection('measurements').doc(syncedMeasurement.uuid);
+          final data = syncedMeasurement.toFirestore();
 
           try {
-            // Nouveau: Essayer de créer le document
+            // Essayer de créer le document
             await docRef.set(data, SetOptions(merge: false));
-            print('✅ Création réussie pour ${measurement.uuid}');
+            print('✅ Création réussie pour ${syncedMeasurement.uuid}');
           } on FirebaseException catch (e) {
             if (e.code == 'already-exists') {
-              // Document existe déjà: Mise à jour
-              await docRef.update(data);
-              print('✅ Mise à jour réussie pour ${measurement.uuid}');
+              // METTRE À JOUR AVEC LA VERSION SYNCHRONISÉE
+              await docRef.update(syncedMeasurement.toFirestore()); // <-- Modification ici
+              print('✅ Mise à jour réussie pour ${syncedMeasurement.uuid}');
             } else {
-              rethrow; // Propager les autres erreurs
+              rethrow;
             }
           }
 
           await _pendingBox!.delete(key);
           syncedCount++;
-          print('🗑️ Mesure ${measurement.uuid} supprimée du stockage local');
+          print('🗑️ Mesure ${syncedMeasurement.uuid} supprimée du stockage local');
 
         } on FirebaseException catch (e) {
           // Gestion des erreurs Firebase
@@ -291,6 +300,173 @@ class _MyHomePageState extends State<MyHomePage> {
       print('🛑 Synchronisation terminée');
     }
   }
+
+  // Future<void> _syncPendingMeasurements() async {
+  //   final user = FirebaseAuth.instance.currentUser;
+  //
+  //   // Vérification des pré-conditions essentielles
+  //   if (user == null) {
+  //     print('🔴 Sync impossible: Aucun utilisateur connecté');
+  //     return;
+  //   }
+  //
+  //   if (!_isHiveInitialized || _pendingBox == null) {
+  //     print('🔴 Sync impossible: Hive non initialisé');
+  //     return;
+  //   }
+  //
+  //   if (!_isOnline) {
+  //     print('🔴 Sync impossible: Hors ligne');
+  //     return;
+  //   }
+  //
+  //   if (_isSyncing) {
+  //     print('🔄 Sync déjà en cours');
+  //     return;
+  //   }
+  //
+  //   // Début de la synchronisation
+  //   if (mounted) setState(() => _isSyncing = true);
+  //
+  //   try {
+  //     final keys = _pendingBox!.keys.toList();
+  //     final int initialCount = keys.length;
+  //     int syncedCount = 0; // Compteur de mesures synchronisées
+  //
+  //     print('🔎 ${initialCount} mesures en attente de synchronisation');
+  //     _hadPendingMeasurements = initialCount > 0;
+  //
+  //     for (final key in keys) {
+  //       if (!mounted) {
+  //         print('⚠️ Synchronisation interrompue: Widget démonté');
+  //         return;
+  //       }
+  //
+  //       final measurement = _pendingBox!.get(key);
+  //
+  //       if (measurement == null) {
+  //         print('🗑️ Suppression clé $key: Mesure null');
+  //         await _pendingBox!.delete(key);
+  //         continue;
+  //       }
+  //
+  //       if (measurement.userId != user.uid) {
+  //         print('👥 Suppression mesure ${measurement.uuid}: Mauvais utilisateur');
+  //         await _pendingBox!.delete(key);
+  //         continue;
+  //       }
+  //
+  //       try {
+  //         if (measurement.userId.isEmpty) {
+  //           print('❌ Mesure ${measurement.uuid} invalide: userID manquant');
+  //           await _pendingBox!.delete(key);
+  //           continue;
+  //         }
+  //
+  //         // Vérifier que l'UUID est valide
+  //         if (measurement.uuid.isEmpty ||
+  //             !RegExp(r'^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$')
+  //                 .hasMatch(measurement.uuid)) {
+  //           print('❌ UUID invalide: ${measurement.uuid}');
+  //           await _pendingBox!.delete(key);
+  //           continue;
+  //         }
+  //
+  //         // Créer une nouvelle mesure avec le statut mis à jour
+  //         final syncedMeasurement = measurement.copyWith(
+  //           status: 'synced',
+  //           syncedAt: DateTime.now(),
+  //         );
+  //
+  //         final docRef = _firestore.collection('measurements').doc(syncedMeasurement.uuid);
+  //         final data = syncedMeasurement.toFirestore();
+  //
+  //         try {
+  //           // Essayer de créer le document
+  //           await docRef.set(data, SetOptions(merge: false));
+  //           print('✅ Création réussie pour ${syncedMeasurement.uuid}');
+  //         } on FirebaseException catch (e) {
+  //           if (e.code == 'already-exists') {
+  //             // Mettre à jour avec la version synchronisée
+  //             await docRef.update(syncedMeasurement.toFirestore());
+  //             print('✅ Mise à jour réussie pour ${syncedMeasurement.uuid}');
+  //           } else {
+  //             rethrow;
+  //           }
+  //         }
+  //
+  //         await _pendingBox!.delete(key);
+  //         syncedCount++;
+  //         print('🗑️ Mesure ${syncedMeasurement.uuid} supprimée du stockage local');
+  //
+  //       } on FirebaseException catch (e) {
+  //         // Gestion des erreurs Firebase
+  //         if (e.code == 'permission-denied') {
+  //           print('🔒 Erreur permission pour ${measurement.uuid}: ${e.message}');
+  //           await Future.delayed(const Duration(milliseconds: 100));
+  //
+  //           if (mounted) {
+  //             ScaffoldMessenger.of(context).showSnackBar(
+  //                 SnackBar(
+  //                   content: Text('Permission refusée pour ${measurement.clientName}'),
+  //                   backgroundColor: Colors.red,
+  //                   duration: const Duration(seconds: 5),
+  //                 )
+  //             );
+  //           }
+  //         }
+  //         else if (e.code == 'invalid-argument') {
+  //           print('❌ Données invalides pour ${measurement.uuid}: ${e.message}');
+  //         }
+  //         else {
+  //           print('🔥 Erreur Firebase [${e.code}]: ${e.message}');
+  //           if (mounted) {
+  //             ScaffoldMessenger.of(context).showSnackBar(
+  //                 SnackBar(
+  //                   content: Text('Erreur ${e.code}: ${e.message}'),
+  //                   backgroundColor: Colors.orange,
+  //                 )
+  //             );
+  //           }
+  //         }
+  //
+  //         // Conserver la mesure dans Hive pour une prochaine tentative
+  //         print('📦 Conservation de ${measurement.uuid} pour re-synchronisation');
+  //       } catch (e) {
+  //         print('❌ Erreur générale: $e');
+  //         if (mounted) {
+  //           ScaffoldMessenger.of(context).showSnackBar(
+  //               SnackBar(
+  //                 content: Text('Erreur inattendue: ${e.toString()}'),
+  //                 backgroundColor: Colors.deepOrange,
+  //               )
+  //           );
+  //         }
+  //         // Conserver la mesure dans Hive
+  //         print('📦 Conservation de ${measurement.uuid} pour re-synchronisation');
+  //       }
+  //     }
+  //
+  //     if (syncedCount > 0 && mounted) {
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         SnackBar(
+  //           content: _buildSyncedAnimation(syncedCount),
+  //           backgroundColor: TColor.principal2,
+  //           duration: const Duration(seconds: 3),
+  //           behavior: SnackBarBehavior.floating,
+  //           shape: RoundedRectangleBorder(
+  //             borderRadius: BorderRadius.circular(10),
+  //           ),
+  //         ),
+  //       );
+  //     }
+  //   } finally {
+  //     if (mounted) {
+  //       setState(() => _isSyncing = false);
+  //     }
+  //     print('🛑 Synchronisation terminée');
+  //   }
+  // }
 
   void _resetForm() {
     _nomCompletController.clear();
@@ -367,14 +543,19 @@ class _MyHomePageState extends State<MyHomePage> {
         status: _isOnline ? 'synced' : 'pending',
         syncedAt: _isOnline ? DateTime.now() : null,
         uuid: const Uuid().v4(),
+        isSynced: _isOnline,
       );
 
-      if (_isOnline) {
-        await _firestore
-            .collection('measurements')
-            .doc(newMeasurement.uuid) // Utiliser UUID comme ID
-            .set(newMeasurement.toFirestore());
-      } else {
+      // if (_isOnline) {
+      //   await _firestore
+      //       .collection('measurements')
+      //       .doc(newMeasurement.uuid) // Utiliser UUID comme ID
+      //       .set(newMeasurement.toFirestore());
+      // } else {
+      //   await _pendingBox?.add(newMeasurement);
+      // }
+
+      if (!_isOnline) {
         await _pendingBox?.add(newMeasurement);
       }
 
@@ -409,35 +590,54 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _deleteMeasurement(String id) async {
-    setState(() {
-      _isDeleting = true;
-      _deletingId = id;
-    });
+  // Future<void> _deleteMeasurement(String id) async {
+  //   setState(() {
+  //     _isDeleting = true;
+  //     _deletingId = id;
+  //   });
+  //
+  //   try {
+  //     if (id.startsWith('pending_')) {
+  //       final key = int.parse(id.split('_')[1]);
+  //       await _pendingBox?.delete(key); // Suppression par clé Hive
+  //     } else {
+  //       // Supprimer de Firestore
+  //       await _firestore.collection('measurements').doc(id).delete();
+  //     }
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(content: Text('Mesure supprimée')),
+  //     );
+  //   } catch (e) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text('Erreur de suppression: $e')),
+  //     );
+  //   } finally {
+  //     if (mounted) {
+  //       setState(() {
+  //         _isDeleting = false;
+  //         _deletingId = null;
+  //       });
+  //     }
+  //   }
+  // }
 
-    try {
-      if (id.startsWith('pending_')) {
-        final key = int.parse(id.split('_')[1]);
-        await _pendingBox?.delete(key); // Suppression par clé Hive
-      } else {
-        // Supprimer de Firestore
-        await _firestore.collection('measurements').doc(id).delete();
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Mesure supprimée')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur de suppression: $e')),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isDeleting = false;
-          _deletingId = null;
-        });
-      }
+  Future<void> _deleteMeasurement(String id) async {
+    if (id.startsWith('pending_')) {
+      final uuid = id.replaceFirst('pending_', ''); // <-- Extraction UUID
+      final key = _findHiveKeyByUuid(uuid); // <-- Nouvelle méthode helper
+      if (key != null) await _pendingBox?.delete(key);
+    } else {
+      await _firestore.collection('measurements').doc(id).delete();
     }
+  }
+
+  // Helper pour trouver la clé Hive via UUID
+  int? _findHiveKeyByUuid(String uuid) {
+    for (final key in _pendingBox!.keys) {
+      final m = _pendingBox!.get(key);
+      if (m != null && m.uuid == uuid) return key;
+    }
+    return null;
   }
 
   void _showLabelSelector(BuildContext context, MeasureInput measureInput) async {
@@ -1401,11 +1601,24 @@ class _MyHomePageState extends State<MyHomePage> {
       firestoreStream,
       hiveStream,
           (List<Measurement> firestore, List<Measurement> pending) {
-        final all = [...firestore, ...pending];
+        // Filtrer les pending déjà synchronisées
+        final pendingFiltered = pending.where((p) => !p.isSynced).toList();
+
+        final all = [...firestore, ...pendingFiltered];
         all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         return all;
       },
     );
+
+    // return Rx.combineLatest2(
+    //   firestoreStream,
+    //   hiveStream,
+    //       (List<Measurement> firestore, List<Measurement> pending) {
+    //     final all = [...firestore, ...pending];
+    //     all.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    //     return all;
+    //   },
+    // );
   }
 
   List<Measurement> _getPendingMeasurements() {
@@ -1416,7 +1629,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
     return _pendingBox!.values
         .where((m) => m.userId == userId) // Filtre crucial
-        .map((m) => m.copyWith(id: 'pending_${m.uuid}'))
+        // .map((m) => m.copyWith(id: 'pending_${m.uuid}'))
+        .map((m) => m)
         .toList();
   }
 
@@ -1500,7 +1714,8 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (isPending)
+                  // if (isPending)
+                  if (measurement.status == 'pending')
                     Container(
                       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                       margin: const EdgeInsets.only(bottom: 8),
@@ -1679,7 +1894,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 ],
               ),
             ),
-            if (isPending)
+            // if (isPending)
+            if (measurement.status == 'pending')
               Positioned(
                 top: 8,
                 right: 8,
@@ -1692,6 +1908,29 @@ class _MyHomePageState extends State<MyHomePage> {
                   child: const Icon(Icons.warning, size: 16, color: Colors.white),
                 ),
               ),
+            // if (measurement.isSyncing)
+            //   Positioned.fill(
+            //     child: Container(
+            //       color: Colors.black54,
+            //       child: Center(
+            //         child: Container(
+            //           padding: const EdgeInsets.all(20),
+            //           decoration: BoxDecoration(
+            //             color: Colors.white,
+            //             borderRadius: BorderRadius.circular(10),
+            //           ),
+            //           child: const Column(
+            //             mainAxisSize: MainAxisSize.min,
+            //             children: [
+            //               CircularProgressIndicator(),
+            //               SizedBox(height: 10),
+            //               Text('Synchronisation...'),
+            //             ],
+            //           ),
+            //         ),
+            //       ),
+            //     ),
+            //   ),
           ],
         ),
       ),
@@ -1710,7 +1949,7 @@ class _MyHomePageState extends State<MyHomePage> {
       floatingActionButton: Column(
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (!_isOnline && _pendingBox!.isNotEmpty)
+          if (!_isOnline && (_pendingBox?.isNotEmpty ?? false))
             FloatingActionButton(
               heroTag: 'syncBtn',
               backgroundColor: Colors.orange,

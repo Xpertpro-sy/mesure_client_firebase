@@ -31,13 +31,14 @@ class MeasurementAdapter extends TypeAdapter<Measurement> {
       syncedAt: fields[11] as DateTime?,
       uuid: fields[12] as String,
       configId: fields[13] as String?,
+      isSyncing: fields[14] == null ? false : fields[14] as bool,
     );
   }
 
   @override
   void write(BinaryWriter writer, Measurement obj) {
     writer
-      ..writeByte(14)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -65,7 +66,9 @@ class MeasurementAdapter extends TypeAdapter<Measurement> {
       ..writeByte(12)
       ..write(obj.uuid)
       ..writeByte(13)
-      ..write(obj.configId);
+      ..write(obj.configId)
+      ..writeByte(14)
+      ..write(obj.isSyncing);
   }
 
   @override
