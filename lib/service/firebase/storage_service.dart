@@ -51,10 +51,18 @@ class StorageService {
       final user = _auth.currentUser;
       if (user == null) throw Exception('Utilisateur non connecté');
 
-      print('Début de l\'upload pour l\'utilisateur: ${user.uid}');
+      print('🚀 Début de l\'upload pour l\'utilisateur: ${user.uid}');
+      print('📁 Chemin du fichier: ${imageFile.path}');
+
+      // Vérifier que le fichier existe
+      if (!await imageFile.exists()) {
+        throw Exception('Le fichier image n\'existe pas: ${imageFile.path}');
+      }
 
       // Vérifier la taille du fichier
       final int fileSize = await imageFile.length();
+      print('📏 Taille du fichier: ${formatFileSize(fileSize)}');
+      
       if (fileSize > maxImageSize) {
         throw Exception('L\'image est trop volumineuse. Taille maximale: 5MB');
       }
@@ -64,7 +72,7 @@ class StorageService {
       final String extension = path.extension(imageFile.path);
       final String fullFileName = '$fileName$extension';
 
-      print('Nom du fichier: $fullFileName');
+      print('📝 Nom du fichier: $fullFileName');
 
       // Référence vers le dossier des images de profil
       final Reference storageRef = _storage
@@ -72,7 +80,9 @@ class StorageService {
           .child('profile_images')
           .child(fullFileName);
 
-      print('Référence Storage créée');
+      print('🔗 Référence Storage créée: ${storageRef.fullPath}');
+      print('🟢 UID courant: ${user.uid}');
+      print('🟢 Métadonnées envoyées: userId=${user.uid}');
 
       // Upload du fichier avec timeout réduit
       final UploadTask uploadTask = storageRef.putFile(
@@ -80,13 +90,14 @@ class StorageService {
         SettableMetadata(
           contentType: 'image/${extension.replaceAll('.', '')}',
           customMetadata: {
-            'userId': user.uid,
+            'userId': user.uid, // Obligatoire pour les règles
+            'originalFilename': path.basename(imageFile.path),
             'uploadedAt': DateTime.now().toIso8601String(),
           },
         ),
       );
 
-      print('Upload task créé, attente...');
+      print('⏳ Upload task créé, attente...');
 
       // Attendre la fin de l'upload avec timeout de 30 secondes (réduit)
       final TaskSnapshot snapshot = await uploadTask.timeout(
@@ -96,19 +107,18 @@ class StorageService {
         },
       );
 
-      print('Upload terminé, récupération de l\'URL...');
+      print('✅ Upload terminé, récupération de l\'URL...');
       
       // Récupérer l'URL de téléchargement
       final String downloadUrl = await snapshot.ref.getDownloadURL();
       
-      print('URL récupérée: $downloadUrl');
+      print('🔗 URL récupérée: $downloadUrl');
       return downloadUrl;
     } catch (e) {
-      print('Erreur lors de l\'upload de l\'image: $e');
+      print('❌ Erreur lors de l\'upload de l\'image: $e');
       rethrow;
     }
   }
-
   /// Supprime une image du Storage
   Future<bool> deleteProfileImage(String imageUrl) async {
     try {

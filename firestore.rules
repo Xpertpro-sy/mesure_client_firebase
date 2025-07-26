@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Règles pour les mesures
+    match /measurements/{id} {
+      allow create: if request.auth != null 
+                   && request.auth.uid == request.resource.data.userId
+                   && request.resource.data.keys().hasAll(['userId', 'value', 'timestamp']);
+      
+      allow update: if request.auth != null 
+                   && request.auth.uid == resource.data.userId
+                   && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['value', 'timestamp']);
+      
+      allow delete: if request.auth != null 
+                   && request.auth.uid == resource.data.userId;
+      
+      allow read: if request.auth != null 
+                   && request.auth.uid == resource.data.userId;
+    }
+
+    // Règles pour les configurations
+    match /measurement_configs/{userId} {
+      allow get: if request.auth != null 
+                 && request.auth.uid == userId;
+      
+      allow create, update: if request.auth != null 
+                            && request.auth.uid == userId
+                            && request.resource.data.keys().hasAll(['unit', 'thresholds'])
+                            && request.resource.data.size() == 2;
+    }
+
+    // Règles pour les utilisateurs
+    match /users/{userId} {
+      allow get: if request.auth != null 
+                 && request.auth.uid == userId;
+      
+      allow create: if request.auth != null 
+                    && request.auth.uid == userId
+                    && request.resource.data.keys().hasAll(['email', 'createdAt'])
+                    && request.resource.data.email == request.auth.token.email;
+      
+      allow update: if request.auth != null 
+                    && request.auth.uid == userId
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['firstName', 'lastName', 'phoneNumber', 'profileImageUrl', 'updatedAt']);
+    }
+  }
+}

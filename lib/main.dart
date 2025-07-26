@@ -9,6 +9,7 @@ import 'package:hive_flutter/adapters.dart';
 import 'model/measurement_config.dart';
 import 'model/measurement_model.dart';
 import 'pages/login_page.dart';
+import 'model/user_model.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,8 @@ void main() async {
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
 
+  await Hive.initFlutter();
+  Hive.registerAdapter(UserModelAdapter());
   // Enregistrer les adaptateurs Hive
   Hive.registerAdapter(MeasurementAdapter());
   Hive.registerAdapter(MeasurementConfigAdapter());

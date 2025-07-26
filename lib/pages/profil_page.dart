@@ -7,6 +7,7 @@ import '../service/firebase/user_service.dart';
 import '../service/firebase/init_firestore.dart';
 import '../model/user_model.dart';
 import 'edit_profile_page.dart';
+import 'package:hive/hive.dart';
 // import '../service/firebase/auth.dart';
 
 class ProfilPage extends StatefulWidget {
@@ -32,6 +33,7 @@ class _ProfilPageState extends State<ProfilPage> {
   final double profileHeight = 144;
   UserModel? _userModel;
   bool _isLoading = true;
+  late Box<UserModel> _userBox;
 
   // Fonction pour afficher le pop-up de déconnexion
   void _showLogoutConfirmation(BuildContext context) {
@@ -174,15 +176,31 @@ class _ProfilPageState extends State<ProfilPage> {
 
   Future<void> _loadUserData() async {
     try {
-      // Initialiser Firestore et créer la collection users si nécessaire
-      await _firestoreInitializer.initializeFirestore();
-      await _firestoreInitializer.createUserIfNotExists();
-      
+      // Ouvrir la box Hive pour UserModel
+      _userBox = await Hive.openBox<UserModel>('user_profile');
+      // Charger d'abord depuis Hive si présent
+      final uid = user?.uid;
+      if (uid != null && _userBox.containsKey(uid)) {
+        setState(() {
+          _userModel = _userBox.get(uid);
+          _isLoading = false;
+        });
+      }
+      // Vérifier si l'utilisateur existe déjà dans Firestore
+      final userExists = await _firestoreInitializer.checkUserExists();
+      if (!userExists) {
+        await _firestoreInitializer.createUserIfNotExists();
+      }
+      // Charger depuis Firestore (toujours pour avoir la dernière version)
       final userModel = await _userService.getCurrentUser();
-      setState(() {
-        _userModel = userModel;
-        _isLoading = false;
-      });
+      if (userModel != null) {
+        setState(() {
+          _userModel = userModel;
+          _isLoading = false;
+        });
+        // Mettre à jour Hive
+        await _userBox.put(userModel.id, userModel);
+      }
     } catch (e) {
       print('Erreur lors du chargement des données utilisateur: $e');
       setState(() {

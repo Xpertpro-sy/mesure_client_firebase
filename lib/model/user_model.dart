@@ -1,13 +1,25 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive/hive.dart';
 
+part 'user_model.g.dart';
+
+@HiveType(typeId: 10)
 class UserModel {
+  @HiveField(0)
   final String id;
+  @HiveField(1)
   final String email;
+  @HiveField(2)
   final String? firstName;
+  @HiveField(3)
   final String? lastName;
+  @HiveField(4)
   final String? phoneNumber;
+  @HiveField(5)
   final String? profileImageUrl;
+  @HiveField(6)
   final DateTime createdAt;
+  @HiveField(7)
   final DateTime updatedAt;
 
   UserModel({
@@ -81,11 +93,12 @@ class UserModel {
     final firstName = this.firstName?.trim() ?? '';
     final lastName = this.lastName?.trim() ?? '';
     
-    if (firstName.isEmpty && lastName.isEmpty) {
-      return email.split('@')[0]; // Utilise la partie locale de l'email
+    if (firstName.isNotEmpty || lastName.isNotEmpty) {
+      return [firstName, lastName].where((name) => name.isNotEmpty).join(' ');
     }
     
-    return [firstName, lastName].where((name) => name.isNotEmpty).join(' ');
+    // Si aucun nom n'est défini, utiliser la partie locale de l'email
+    return email.split('@')[0];
   }
 
   /// Vérifie si l'utilisateur a un profil complet

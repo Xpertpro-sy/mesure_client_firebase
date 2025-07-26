@@ -152,9 +152,18 @@ class Validators {
 
   /// Nettoie et normalise un nom
   static String normalizeName(String name) {
-    return name.trim().toLowerCase().split(' ').map((word) {
+    if (name.trim().isEmpty) return '';
+    
+    // Nettoyer les espaces multiples et normaliser
+    String normalized = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+    
+    // Capitaliser chaque mot
+    List<String> words = normalized.split(' ');
+    List<String> capitalizedWords = words.map((word) {
       if (word.isEmpty) return '';
       return word[0].toUpperCase() + word.substring(1).toLowerCase();
-    }).where((word) => word.isNotEmpty).join(' ');
+    }).toList();
+    
+    return capitalizedWords.join(' ');
   }
 } 

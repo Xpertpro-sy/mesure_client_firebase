@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../model/user_model.dart';
+import 'package:hive/hive.dart';
 
 class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -38,29 +39,45 @@ class UserService {
       if (user == null) throw Exception('Utilisateur non connecté');
 
       final now = DateTime.now();
-      final userData = {
+      
+      // Récupérer les données existantes
+      final existingDoc = await _usersCollection.doc(user.uid).get();
+      Map<String, dynamic> userData = {
         'email': user.email,
-        'firstName': firstName,
-        'lastName': lastName,
-        'phoneNumber': phoneNumber,
-        'profileImageUrl': profileImageUrl,
         'updatedAt': Timestamp.fromDate(now),
       };
 
-      // Vérifier si l'utilisateur existe déjà
-      final existingDoc = await _usersCollection.doc(user.uid).get();
-      
       if (!existingDoc.exists) {
         // Créer un nouvel utilisateur
         userData['createdAt'] = Timestamp.fromDate(now);
+        userData['firstName'] = firstName;
+        userData['lastName'] = lastName;
+        userData['phoneNumber'] = phoneNumber;
+        userData['profileImageUrl'] = profileImageUrl;
+        
         await _usersCollection.doc(user.uid).set(userData);
       } else {
-        // Mettre à jour l'utilisateur existant
-        await _usersCollection.doc(user.uid).update(userData);
+        // Mettre à jour l'utilisateur existant - ne mettre à jour que les champs non-null
+        Map<String, dynamic> updateData = {
+          'updatedAt': Timestamp.fromDate(now),
+        };
+        
+        if (firstName != null) updateData['firstName'] = firstName;
+        if (lastName != null) updateData['lastName'] = lastName;
+        if (phoneNumber != null) updateData['phoneNumber'] = phoneNumber;
+        if (profileImageUrl != null) updateData['profileImageUrl'] = profileImageUrl;
+        
+        await _usersCollection.doc(user.uid).set(updateData, SetOptions(merge: true));
       }
 
       // Récupérer l'utilisateur mis à jour
-      return await getCurrentUser();
+      final updatedUser = await getCurrentUser();
+      // Sauvegarder dans Hive
+      if (updatedUser != null) {
+        final userBox = await Hive.openBox<UserModel>('user_profile');
+        await userBox.put(updatedUser.id, updatedUser);
+      }
+      return updatedUser;
     } catch (e) {
       print('Erreur lors de la création/mise à jour de l\'utilisateur: $e');
       return null;
