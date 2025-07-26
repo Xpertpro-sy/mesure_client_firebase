@@ -61,6 +61,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _initHive().then((_) {
         _initConnectivity();
         _setupOfflineListener();
+        _startConnectivityCheck(); // Démarrer la vérification périodique
       });
     });
 
@@ -103,7 +104,13 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _initConnectivity() async {
     final result = await Connectivity().checkConnectivity();
-    final online = result != ConnectivityResult.none;
+    final hasNetwork = result != ConnectivityResult.none;
+
+    // Tester la vraie connectivité Firebase si on a un réseau
+    bool online = false;
+    if (hasNetwork) {
+      online = await _testFirebaseConnectivity();
+    }
 
     if (mounted) setState(() => _isOnline = online);
 
@@ -113,13 +120,67 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<bool> _testFirebaseConnectivity() async {
+    try {
+      // Vérifier d'abord si l'utilisateur est connecté
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        print('🔴 Test de connectivité: Aucun utilisateur connecté');
+        return false;
+      }
+
+      // Test de connectivité Firestore en utilisant une collection autorisée
+      await FirebaseFirestore.instance
+          .collection('measurement_configs')
+          .doc(user.uid)
+          .get(const GetOptions(source: Source.server))
+          .timeout(const Duration(seconds: 5));
+      
+      print('✅ Test de connectivité Firebase réussi');
+      return true;
+    } catch (e) {
+      print('🔴 Test de connectivité Firebase échoué: $e');
+      return false;
+    }
+  }
+
+  // Méthode pour tester périodiquement la connectivité
+  void _startConnectivityCheck() {
+    Timer.periodic(const Duration(minutes: 2), (timer) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      final currentStatus = _isOnline;
+      final newStatus = await _testFirebaseConnectivity();
+      
+      if (currentStatus != newStatus && mounted) {
+        setState(() => _isOnline = newStatus);
+        print('🔄 Statut de connectivité changé: ${currentStatus ? 'en ligne' : 'hors ligne'} -> ${newStatus ? 'en ligne' : 'hors ligne'}');
+        
+        if (newStatus) {
+          // Synchroniser les mesures en attente
+          Future.delayed(const Duration(seconds: 1), () {
+            _syncPendingMeasurements();
+          });
+        }
+      }
+    });
+  }
+
   void _setupOfflineListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
-        .listen((List<ConnectivityResult> results) {
-      final newStatus = results.any(
+        .listen((List<ConnectivityResult> results) async {
+      final hasNetwork = results.any(
               (result) => result != ConnectivityResult.none
       );
+
+      bool newStatus = false;
+      if (hasNetwork) {
+        newStatus = await _testFirebaseConnectivity();
+      }
 
       if (newStatus != _isOnline) {
         setState(() => _isOnline = newStatus);
@@ -533,30 +594,29 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
 
+      final user = FirebaseAuth.instance.currentUser;
+      final isReallyOnline = _isOnline && user != null;
+
       final newMeasurement = Measurement(
         clientName: clientName.trim(),
         createdAt: DateTime.now(),
         measurements: mesures,
         price: prix,
         advance: avance,
-        userId: FirebaseAuth.instance.currentUser!.uid,
-        status: _isOnline ? 'synced' : 'pending',
-        syncedAt: _isOnline ? DateTime.now() : null,
+        userId: user?.uid ?? '',
+        status: isReallyOnline ? 'synced' : 'pending',
+        syncedAt: isReallyOnline ? DateTime.now() : null,
         uuid: const Uuid().v4(),
-        isSynced: _isOnline,
+        isSynced: isReallyOnline,
       );
 
-      // if (_isOnline) {
-      //   await _firestore
-      //       .collection('measurements')
-      //       .doc(newMeasurement.uuid) // Utiliser UUID comme ID
-      //       .set(newMeasurement.toFirestore());
-      // } else {
-      //   await _pendingBox?.add(newMeasurement);
-      // }
-
-      if (!_isOnline) {
+      if (!isReallyOnline) {
         await _pendingBox?.add(newMeasurement);
+      } else {
+        await _firestore
+            .collection('measurements')
+            .doc(newMeasurement.uuid)
+            .set(newMeasurement.toFirestore());
       }
 
       if (mounted) {
