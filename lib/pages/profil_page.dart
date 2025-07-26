@@ -3,6 +3,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../service/firebase/auth.dart';
+import '../service/firebase/user_service.dart';
+import '../service/firebase/init_firestore.dart';
+import '../model/user_model.dart';
+import 'edit_profile_page.dart';
 // import '../service/firebase/auth.dart';
 
 class ProfilPage extends StatefulWidget {
@@ -23,7 +27,11 @@ class MenuItem {
 
 class _ProfilPageState extends State<ProfilPage> {
   final User? user = Auth().currentUser;
+  final UserService _userService = UserService();
+  final FirestoreInitializer _firestoreInitializer = FirestoreInitializer();
   final double profileHeight = 144;
+  UserModel? _userModel;
+  bool _isLoading = true;
 
   // Fonction pour afficher le pop-up de déconnexion
   void _showLogoutConfirmation(BuildContext context) {
@@ -159,6 +167,47 @@ class _ProfilPageState extends State<ProfilPage> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    try {
+      // Initialiser Firestore et créer la collection users si nécessaire
+      await _firestoreInitializer.initializeFirestore();
+      await _firestoreInitializer.createUserIfNotExists();
+      
+      final userModel = await _userService.getCurrentUser();
+      setState(() {
+        _userModel = userModel;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print('Erreur lors du chargement des données utilisateur: $e');
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _openEditProfile() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfilePage(user: _userModel),
+        fullscreenDialog: true,
+      ),
+    );
+
+    if (result != null && result is UserModel) {
+      setState(() {
+        _userModel = result;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final List<MenuItem> menuItems = [
       MenuItem(
@@ -272,20 +321,35 @@ class _ProfilPageState extends State<ProfilPage> {
               Positioned(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(100),
-                  child: Image.asset(
-                    'assets/logoHy.png',
-                    height: profileHeight,
-                    width: profileHeight,
-                    fit: BoxFit.cover,
-                  ),
+                  child: _userModel?.profileImageUrl != null && _userModel!.profileImageUrl!.isNotEmpty
+                      ? Image.network(
+                          _userModel!.profileImageUrl!,
+                          height: profileHeight,
+                          width: profileHeight,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Image.asset(
+                              'assets/logoHy.png',
+                              height: profileHeight,
+                              width: profileHeight,
+                              fit: BoxFit.cover,
+                            );
+                          },
+                        )
+                      : Image.asset(
+                          'assets/logoHy.png',
+                          height: profileHeight,
+                          width: profileHeight,
+                          fit: BoxFit.cover,
+                        ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 24),
-          const Text(
-            'SY Diakaridia',
-            style: TextStyle(
+          Text(
+            _userModel?.fullName ?? 'SY Diakaridia',
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.bold,
               color: Colors.black87,
@@ -362,7 +426,9 @@ class _ProfilPageState extends State<ProfilPage> {
                   color: Colors.grey.shade400,
                 ),
                 onTap: () {
-                  if (menuItems[index].title == 'Déconnexion') {
+                  if (menuItems[index].title == 'Modifier le profil') {
+                    _openEditProfile();
+                  } else if (menuItems[index].title == 'Déconnexion') {
                     _showLogoutConfirmation(context);
                   }
                 },
