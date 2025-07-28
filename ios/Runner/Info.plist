@@ -25,6 +25,12 @@
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
+	<key>NSPhotoLibraryUsageDescription</key>
+    <string>Pour sélectionner des photos</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Pour prendre des photos</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Pour prendre des vidéos</string>
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Cette application nécessite l'accès au réseau local pour le débogage et la communication réseau.</string>

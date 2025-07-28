@@ -1,6 +1,11 @@
 // import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import '../service/firebase/auth.dart';
 import '../service/firebase/user_service.dart';
@@ -34,6 +39,7 @@ class _ProfilPageState extends State<ProfilPage> {
   UserModel? _userModel;
   bool _isLoading = true;
   late Box<UserModel> _userBox;
+  Uint8List? _cachedProfileImage;
 
   // Fonction pour afficher le pop-up de déconnexion
   void _showLogoutConfirmation(BuildContext context) {
@@ -186,6 +192,13 @@ class _ProfilPageState extends State<ProfilPage> {
           _isLoading = false;
         });
       }
+
+      // Vérifier si l'image est en cache
+      final cachedImage = await _getCachedProfileImage();
+      if (cachedImage != null) {
+        setState(() => _cachedProfileImage = cachedImage);
+      }
+
       // Vérifier si l'utilisateur existe déjà dans Firestore
       final userExists = await _firestoreInitializer.checkUserExists();
       if (!userExists) {
@@ -198,6 +211,12 @@ class _ProfilPageState extends State<ProfilPage> {
           _userModel = userModel;
           _isLoading = false;
         });
+
+        // Mettre en cache la nouvelle image
+        if (userModel.profileImageUrl != null && userModel.profileImageUrl!.isNotEmpty) {
+          await _cacheProfileImage(userModel.profileImageUrl!);
+        }
+
         // Mettre à jour Hive
         await _userBox.put(userModel.id, userModel);
       }
@@ -206,6 +225,37 @@ class _ProfilPageState extends State<ProfilPage> {
       setState(() {
         _isLoading = false;
       });
+    }
+  }
+
+  Future<Uint8List?> _getCachedProfileImage() async {
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final file = File('${appDocDir.path}/profile_image.dat');
+
+      if (await file.exists()) {
+        final bytes = await file.readAsBytes();
+        return Uint8List.fromList(bytes); // Conversion explicite
+      }
+    } catch (e) {
+      print('Erreur de récupération du cache: $e');
+    }
+    return null;
+  }
+
+  Future<void> _cacheProfileImage(String imageUrl) async {
+    try {
+      final response = await http.get(Uri.parse(imageUrl));
+      if (response.statusCode == 200) {
+        final appDocDir = await getApplicationDocumentsDirectory();
+        final file = File('${appDocDir.path}/profile_image.dat');
+        await file.writeAsBytes(response.bodyBytes);
+
+        // Conversion explicite
+        setState(() => _cachedProfileImage = Uint8List.fromList(response.bodyBytes));
+      }
+    } catch (e) {
+      print('Erreur de mise en cache: $e');
     }
   }
 
@@ -339,27 +389,26 @@ class _ProfilPageState extends State<ProfilPage> {
               Positioned(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(100),
-                  child: _userModel?.profileImageUrl != null && _userModel!.profileImageUrl!.isNotEmpty
+                  child: _cachedProfileImage != null
+                      ? Image.memory(
+                    _cachedProfileImage!, // Utilisation directe
+                    height: profileHeight,
+                    width: profileHeight,
+                    fit: BoxFit.cover,
+                  )
+                      : (_userModel?.profileImageUrl != null &&
+                      _userModel!.profileImageUrl!.isNotEmpty
                       ? Image.network(
-                          _userModel!.profileImageUrl!,
-                          height: profileHeight,
-                          width: profileHeight,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Image.asset(
-                              'assets/logoHy.png',
-                              height: profileHeight,
-                              width: profileHeight,
-                              fit: BoxFit.cover,
-                            );
-                          },
-                        )
-                      : Image.asset(
-                          'assets/logoHy.png',
-                          height: profileHeight,
-                          width: profileHeight,
-                          fit: BoxFit.cover,
-                        ),
+                    _userModel!.profileImageUrl!,
+                    height: profileHeight,
+                    width: profileHeight,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return _buildDefaultImage();
+                    },
+                  )
+                      : _buildDefaultImage()
+                  ),
                 ),
               ),
             ],
@@ -392,6 +441,15 @@ class _ProfilPageState extends State<ProfilPage> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildDefaultImage() {
+    return Image.asset(
+      'assets/logoHy.png',
+      height: profileHeight,
+      width: profileHeight,
+      fit: BoxFit.cover,
     );
   }
 

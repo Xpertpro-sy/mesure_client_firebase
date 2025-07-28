@@ -39,39 +39,26 @@ class UserService {
       if (user == null) throw Exception('Utilisateur non connecté');
 
       final now = DateTime.now();
-      
-      // Récupérer les données existantes
-      final existingDoc = await _usersCollection.doc(user.uid).get();
-      Map<String, dynamic> userData = {
-        'email': user.email,
+
+      // Créer l'objet de mise à jour
+      Map<String, dynamic> updateData = {
         'updatedAt': Timestamp.fromDate(now),
       };
 
-      if (!existingDoc.exists) {
-        // Créer un nouvel utilisateur
-        userData['createdAt'] = Timestamp.fromDate(now);
-        userData['firstName'] = firstName;
-        userData['lastName'] = lastName;
-        userData['phoneNumber'] = phoneNumber;
-        userData['profileImageUrl'] = profileImageUrl;
-        
-        await _usersCollection.doc(user.uid).set(userData);
-      } else {
-        // Mettre à jour l'utilisateur existant - ne mettre à jour que les champs non-null
-        Map<String, dynamic> updateData = {
-          'updatedAt': Timestamp.fromDate(now),
-        };
-        
-        if (firstName != null) updateData['firstName'] = firstName;
-        if (lastName != null) updateData['lastName'] = lastName;
-        if (phoneNumber != null) updateData['phoneNumber'] = phoneNumber;
-        if (profileImageUrl != null) updateData['profileImageUrl'] = profileImageUrl;
-        
-        await _usersCollection.doc(user.uid).set(updateData, SetOptions(merge: true));
+      if (firstName != null) updateData['firstName'] = firstName;
+      if (lastName != null) updateData['lastName'] = lastName;
+      if (phoneNumber != null) updateData['phoneNumber'] = phoneNumber;
+
+      // Ne mettre à jour l'URL que si elle est fournie
+      if (profileImageUrl != null) {
+        updateData['profileImageUrl'] = profileImageUrl;
       }
+
+      await _usersCollection.doc(user.uid).set(updateData, SetOptions(merge: true));
 
       // Récupérer l'utilisateur mis à jour
       final updatedUser = await getCurrentUser();
+
       // Sauvegarder dans Hive
       if (updatedUser != null) {
         final userBox = await Hive.openBox<UserModel>('user_profile');

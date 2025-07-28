@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 class StorageService {
@@ -11,31 +13,35 @@ class StorageService {
   final ImagePicker _picker = ImagePicker();
   final Uuid _uuid = const Uuid();
 
-  /// Taille maximale de l'image (5MB)
-  static const int maxImageSize = 5 * 1024 * 1024;
+  /// Taille maximale de l'image (1MB)
+  static const int maxImageSize = 1 * 1024 * 1024;
 
-  /// Sélectionne une image depuis la galerie avec compression basique
-  Future<File?> pickImage({
+  /// Sélectionne et compresse une image
+  Future<File?> pickAndCompressImage({
     ImageSource source = ImageSource.gallery,
-    int maxWidth = 1024,
-    int maxHeight = 1024,
+    int maxWidth = 800,
+    int maxHeight = 800,
+    int quality = 70,
   }) async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: source,
         maxWidth: maxWidth.toDouble(),
         maxHeight: maxHeight.toDouble(),
-        imageQuality: 80, // Compression basique via imageQuality
       );
 
       if (pickedFile == null) return null;
 
-      final File imageFile = File(pickedFile.path);
-      
+      File imageFile = File(pickedFile.path);
+
+      // Compression de l'image
+      imageFile = await _compressImage(imageFile, quality: quality);
+
       // Vérifier la taille du fichier
       final int fileSize = await imageFile.length();
       if (fileSize > maxImageSize) {
-        throw Exception('L\'image est trop volumineuse. Taille maximale: 5MB');
+        // Compression supplémentaire si nécessaire
+        return await _compressImage(imageFile, quality: quality - 10);
       }
 
       return imageFile;
@@ -45,34 +51,40 @@ class StorageService {
     }
   }
 
+  /// Compresse une image
+  Future<File> _compressImage(File file, {int quality = 70}) async {
+    final tempDir = await getTemporaryDirectory();
+    final targetPath = '${tempDir.path}/compressed_${path.basename(file.path)}';
+
+    final result = await FlutterImageCompress.compressAndGetFile(
+      file.absolute.path,
+      targetPath,
+      quality: quality,
+    );
+
+    if (result == null) {
+      throw Exception('Échec de la compression de l\'image');
+    }
+
+    return File(result.path);
+  }
+
   /// Upload une image vers Firebase Storage
-  Future<String> uploadProfileImage(File imageFile) async {
+  Future<String> uploadProfileImage(File imageFile, {String? oldImageUrl}) async {
     try {
       final user = _auth.currentUser;
       if (user == null) throw Exception('Utilisateur non connecté');
 
-      print('🚀 Début de l\'upload pour l\'utilisateur: ${user.uid}');
-      print('📁 Chemin du fichier: ${imageFile.path}');
-
-      // Vérifier que le fichier existe
-      if (!await imageFile.exists()) {
-        throw Exception('Le fichier image n\'existe pas: ${imageFile.path}');
-      }
-
       // Vérifier la taille du fichier
       final int fileSize = await imageFile.length();
-      print('📏 Taille du fichier: ${formatFileSize(fileSize)}');
-      
       if (fileSize > maxImageSize) {
-        throw Exception('L\'image est trop volumineuse. Taille maximale: 5MB');
+        throw Exception('L\'image est trop volumineuse. Taille maximale: 1MB');
       }
 
       // Générer un nom de fichier unique
-      final String fileName = 'profile_${user.uid}_${_uuid.v4()}';
+      final String fileName = 'profile_${user.uid}';
       final String extension = path.extension(imageFile.path);
       final String fullFileName = '$fileName$extension';
-
-      print('📝 Nom du fichier: $fullFileName');
 
       // Référence vers le dossier des images de profil
       final Reference storageRef = _storage
@@ -80,57 +92,41 @@ class StorageService {
           .child('profile_images')
           .child(fullFileName);
 
-      print('🔗 Référence Storage créée: ${storageRef.fullPath}');
-      print('🟢 UID courant: ${user.uid}');
-      print('🟢 Métadonnées envoyées: userId=${user.uid}');
-
-      // Upload du fichier avec timeout réduit
+      // Upload du fichier
       final UploadTask uploadTask = storageRef.putFile(
         imageFile,
         SettableMetadata(
           contentType: 'image/${extension.replaceAll('.', '')}',
-          customMetadata: {
-            'userId': user.uid, // Obligatoire pour les règles
-            'originalFilename': path.basename(imageFile.path),
-            'uploadedAt': DateTime.now().toIso8601String(),
-          },
+          customMetadata: {'userId': user.uid},
         ),
       );
 
-      print('⏳ Upload task créé, attente...');
+      // Attendre la fin de l'upload
+      final TaskSnapshot snapshot = await uploadTask;
 
-      // Attendre la fin de l'upload avec timeout de 30 secondes (réduit)
-      final TaskSnapshot snapshot = await uploadTask.timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Timeout lors de l\'upload de l\'image (30 secondes). Vérifiez votre connexion internet.');
-        },
-      );
-
-      print('✅ Upload terminé, récupération de l\'URL...');
-      
       // Récupérer l'URL de téléchargement
       final String downloadUrl = await snapshot.ref.getDownloadURL();
-      
-      print('🔗 URL récupérée: $downloadUrl');
+
+      // Supprimer l'ancienne image si elle existe
+      if (oldImageUrl != null && oldImageUrl.isNotEmpty) {
+        await deleteProfileImage(oldImageUrl);
+      }
+
       return downloadUrl;
     } catch (e) {
       print('❌ Erreur lors de l\'upload de l\'image: $e');
       rethrow;
     }
   }
+
   /// Supprime une image du Storage
   Future<bool> deleteProfileImage(String imageUrl) async {
     try {
       // Extraire le chemin du fichier depuis l'URL
       final Uri uri = Uri.parse(imageUrl);
       final String filePath = uri.pathSegments.last;
-      
-      final Reference storageRef = _storage
-          .ref()
-          .child('profile_images')
-          .child(filePath);
 
+      final Reference storageRef = _storage.ref(filePath);
       await storageRef.delete();
       return true;
     } catch (e) {
@@ -138,33 +134,4 @@ class StorageService {
       return false;
     }
   }
-
-  /// Vérifie si une URL est valide
-  bool isValidImageUrl(String? url) {
-    if (url == null || url.isEmpty) return false;
-    
-    try {
-      final Uri uri = Uri.parse(url);
-      return uri.hasScheme && (uri.scheme == 'http' || uri.scheme == 'https');
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// Récupère la taille d'un fichier
-  Future<int> getFileSize(File file) async {
-    try {
-      return await file.length();
-    } catch (e) {
-      print('Erreur lors de la récupération de la taille du fichier: $e');
-      return 0;
-    }
-  }
-
-  /// Formate la taille d'un fichier en format lisible
-  String formatFileSize(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
-} 
+}

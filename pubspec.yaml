@@ -47,8 +47,8 @@ dependencies:
   path_provider: ^2.1.5
   image_picker: ^1.1.2
   firebase_storage: ^12.2.2
-  cloudinary_dart: ^0.0.11
-  cloudinary_public: ^0.23.1
+  flutter_image_compress: ^2.4.0
+  http: ^1.4.0
 
 dev_dependencies:
   flutter_test:

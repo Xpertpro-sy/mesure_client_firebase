@@ -59,15 +59,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Future<void> _pickImage() async {
     try {
       setState(() => _isUploadingImage = true);
-      
-      final File? imageFile = await _storageService.pickImage();
-      
+
+      final File? imageFile = await _storageService.pickAndCompressImage();
+
       if (imageFile != null) {
         setState(() {
           _imageFile = imageFile;
           _selectedImagePath = imageFile.path;
         });
-        print('Nouvelle image sélectionnée: ${imageFile.path}');
       }
     } catch (e) {
       _showErrorSnackBar('Erreur: ${e.toString()}');
@@ -82,30 +81,22 @@ class _EditProfilePageState extends State<EditProfilePage> {
     setState(() => _isLoading = true);
 
     try {
-      print('🔄 Début de la sauvegarde du profil');
-      
       String? newImageUrl = _currentImageUrl;
-      final firstName = Validators.normalizeName(_firstNameController.text.trim());
-      final lastName = Validators.normalizeName(_lastNameController.text.trim());
-      final phoneNumber = _phoneController.text.trim();
-
-      print('📝 Données à sauvegarder:');
-      print('   - Prénom: "$firstName"');
-      print('   - Nom: "$lastName"');
-      print('   - Téléphone: "$phoneNumber"');
-      print('   - Image actuelle: $_currentImageUrl');
 
       // 1. Uploader la nouvelle image SI elle existe
       if (_imageFile != null) {
-        print('📤 Upload de la nouvelle image...');
-        newImageUrl = await _storageService.uploadProfileImage(_imageFile!);
-        print('✅ Nouvelle URL d\'image: $newImageUrl');
-      } else {
-        print('ℹ️ Aucune nouvelle image à uploader');
+        newImageUrl = await _storageService.uploadProfileImage(
+          _imageFile!,
+          oldImageUrl: _currentImageUrl,
+        );
       }
 
+      // Extraire les valeurs des contrôleurs
+      final String firstName = _firstNameController.text.trim();
+      final String lastName = _lastNameController.text.trim();
+      final String phoneNumber = _phoneController.text.trim();
+
       // 2. Mettre à jour le profil avec la nouvelle image
-      print('💾 Mise à jour du profil dans Firestore...');
       final updatedUser = await _userService.createOrUpdateUser(
         firstName: firstName,
         lastName: lastName,
@@ -115,16 +106,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
       if (updatedUser == null) throw Exception('Échec de la mise à jour du profil');
 
-      print('✅ Profil mis à jour avec succès:');
-      print('   - Prénom: "${updatedUser.firstName}"');
-      print('   - Nom: "${updatedUser.lastName}"');
-      print('   - Téléphone: "${updatedUser.phoneNumber}"');
-      print('   - Image: "${updatedUser.profileImageUrl}"');
-
       _showSuccessSnackBar('Profil mis à jour avec succès !');
       Navigator.pop(context, updatedUser);
     } catch (e) {
-      print('❌ Erreur lors de la sauvegarde: $e');
       _showErrorSnackBar('Erreur: ${e.toString()}');
     } finally {
       setState(() => _isLoading = false);
